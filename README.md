@@ -12,7 +12,7 @@ $ git clone git@github.com:NatashaPuzovic/supplementarydata_expressionnoise.git
 $ cd supplementarydata_adaptivenoise
 ```
 
-Download the zipped raw data from zenodo (10.5281/zenodo.24049819) in this folder and unzip.
+Download the zipped raw data from zenodo (https://zenodo.org/records/24049819) in this folder and unzip.
 
 ```
 $ unzip results.zip
