@@ -1,0 +1,668 @@
+---
+title: "Time plots of the evolution of noise and mean under directional selection"
+author: "Natasha Puzovic (puzovic@evolbio.mpg.de)"
+date: "Jan 29, 2023"
+output:
+  pdf_document:
+  toc: yes
+html_document:
+  df_print: paged
+number_sections: yes
+toc: yes
+---
+
+# Setup
+
+```{r setup}
+numReps = 5
+adaptationResponseCriteria = 0.05
+
+resultsFolder = "20230213_ER_40node_dirSelPos/net_299/"
+resultsPath = paste0("../results/", resultsFolder)
+plotsFolderWithPath = "../plots/timePlots/net_299_dirSelPos"
+
+if (!dir.exists(plotsFolderWithPath))
+{
+  dir.create(plotsFolderWithPath)
+}
+#knitr::opts_knit$set(root.dir = "C:/Users/puzovic/expressionnoise/GBE/results/20230126_ER_40node_0.05dens/net_1/")
+#knitr::opts_knit$set(root.dir = "/home/npuzovic/expressionnoise/GBE/results/20230126_ER_40node/net_1/")
+#getwd()
+```
+
+```{r load-packages}
+# Package list
+packages <- c("dplyr",
+              "nlme", 
+              "MuMIn", # for r.squared in lme models
+              "ggplot2",
+              "ggpubr", # for the pubclean theme
+              "ggridges", 
+              "gridExtra",
+              "cowplot", # for arranging plots
+              "infotheo",
+              "lme4", 
+              "car", # for vif measure
+              "RColorBrewer", # for color palettes
+              "latex2exp", # for latex notation in the plots
+              "reshape2", 
+              "formattable", # for nice tables
+              "htmltools", # for outputting the table
+              "webshot") # for outputting the table
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+
+# colors for plots
+noiseColor = "#01665e"
+genotypeNoiseColor = "#7b3294"
+genotypeSBasalColor = "#08519c"
+phenotypeColor = "#d95f0e"
+fitnessColor = "#e78ac3"
+neutralityColor = "darkgray"
+customGreenAIC = "#41ab5d"
+```
+
+# Read params
+read params from the establishment of mutation-selection balance & scenEvol
+
+```{r read-params}
+# read params (mutation-selection balance)
+prmsS_forMutSelBalance <- read.table(file = paste0(resultsPath, "prmsS_forMutSelBalance"), 
+                                     sep = " ", header = FALSE, row.names = 1)
+NUM_NODES = prmsS_forMutSelBalance[rownames(prmsS_forMutSelBalance) == "NUM_NODES", ]
+NUM_GENERATIONS_mutSelBalance = prmsS_forMutSelBalance[rownames(prmsS_forMutSelBalance) == "NUM_GENERATIONS", ]
+prmsV_forMutSelBalance <- as.matrix(read.table(paste0(resultsPath, "prmsV_forMutSelBalance"),
+                                               sep = " ", header = FALSE, row.names = 1))
+ylim_noise_lower <- prmsS_forMutSelBalance[which(rownames(prmsS_forMutSelBalance) == "MUTATION_DISTR_NOISE_LOWERBOUND"), ]
+ylim_noise_upper <- prmsS_forMutSelBalance[which(rownames(prmsS_forMutSelBalance) == "MUTATION_DISTR_NOISE_UPPERBOUND"), ]
+ylim_sbasal_lower <- prmsS_forMutSelBalance[which(rownames(prmsS_forMutSelBalance) == "MUTATION_DISTR_SBASAL_LOWERBOUND"), ]
+ylim_sbasal_upper <- prmsS_forMutSelBalance[which(rownames(prmsS_forMutSelBalance) == "MUTATION_DISTR_SBASAL_UPPERBOUND"), ]
+
+# calculate indices of genotypes, phenotypes, and fitness
+numIDCols = 2
+indIDCols = c(1, 2)
+indGenotNoiseCols = seq(from = numIDCols  + 1, to = numIDCols  + NUM_NODES, by = 1)
+indGenotSBasalCols = seq(from = numIDCols  + NUM_NODES + 1, to = numIDCols  + 2*NUM_NODES, by = 1)
+indGenotNetCols = seq(from = numIDCols  + 2*NUM_NODES + 1, to = numIDCols  + 2*NUM_NODES + NUM_NODES^2, by = 1)
+indPhenotypeCols = seq(from = numIDCols  + 2*NUM_NODES + NUM_NODES^2 + 1, to = numIDCols  + 3*NUM_NODES + NUM_NODES^2, by = 1)
+indFitnessCol = numIDCols + length(indGenotNoiseCols) + length(indGenotSBasalCols) + 
+                length(indGenotNetCols) + length(indPhenotypeCols) + 1
+pop0FirstgenRealized <- read.table(paste0(resultsPath, "pop.MSB.firstgen"),
+                                   sep = " ", header = FALSE)
+sSteady = pop0FirstgenRealized[1, indPhenotypeCols]
+
+# names
+node_names = paste("G", 1:NUM_NODES, sep = "")
+meanGenotColnames <- paste("meanG_", node_names, sep = "")
+meanPhenotColnames <- paste("meanP_", node_names, sep = "")
+varPhenotColnames <- paste("varP_", node_names, sep = "")
+
+# read params (dirSel)
+#prmsS_sel <- read.table(file = paste0(resultsPath, "prmsS_sel_oppDir_rep1"),
+prmsS_sel <- read.table(file = paste0(resultsPath, "prmsS_dirSelPos_rep1"),
+                        sep = " ", header = FALSE, row.names = 1)
+NUM_GENERATIONS = prmsS_sel[rownames(prmsS_sel) == "NUM_GENERATIONS", ]
+S_MAX = prmsS_sel[rownames(prmsS_sel) == "S_MAX", ]
+prmsV_39stab1dir <- as.matrix(read.table(paste0(resultsPath, "prmsV_39stab_1dirSelPos"),
+                                         sep = " ", header = FALSE, row.names = 1))
+#prmsV_39stab1dir <- as.matrix(read.table(paste0(resultsPath, "prmsV_39stab_1dirNeg"),
+#                                         sep = " ", header = FALSE, row.names = 1))
+
+# read params (fluctSel)
+#prmsS_fluctSel <- read.table(file = paste0(resultsPath, "prmsS_fluctSel_rep1"),
+#                        sep = " ", header = FALSE, row.names = 1)
+#NUM_GENERATIONS = prmsS_sel[rownames(prmsS_sel) == "NUM_GENERATIONS", ]
+
+# which genes had a change of selection regime?
+indexSelGene <- as.integer(which(prmsV_39stab1dir["S_OPT_DELTA", ] != 0))
+```
+
+# Time plot of mutSelBalance
+Look at the dynamics of establishment of mutation-selection balance.
+
+```{r mutSelBalance}
+# read hist file
+MSBHist <- read.table(paste0(resultsPath, "mutSelBalance.hist"), header = FALSE)
+colnames(MSBHist) <- c("generation", meanPhenotColnames, varPhenotColnames, "meanF")
+# read noises file
+MSBNoises <- read.table(paste0(resultsPath, "mutSelBalance.noises"), header = FALSE)
+colnames(MSBNoises) <- c("generation", meanGenotColnames)
+# read sbasals file
+MSBSbasals <- read.table(paste0(resultsPath, "mutSelBalance.sbasals"), header = FALSE)
+colnames(MSBSbasals) <- c("generation", meanGenotColnames)
+
+# which genes are not expressed at steady state?
+which(sSteady == 0)
+
+# peek
+# plot_pop_fitness <-
+#   ggplot(data = MSBHist[!is.nan(MSBHist$meanP_G1), ],
+#          aes(x=generation, y = meanF)) +
+#   geom_line(color = fitnessColor) +
+#   ylab("Mean fitness") +
+#   ylim(-0.1, 1.1)
+# plot_pop_fitness
+# 
+# plot_genes_1_5 <-
+#   ggplot(data = melt(MSBNoises[,c(1:6)], id.vars = "generation"),
+#          aes(x=generation, y = value, group = variable)) +
+#   geom_line(aes(colour = variable)) +
+#   ylab("Mean noise genotype") +
+#   ylim(ylim_noise_lower, ylim_noise_upper)
+# plot_genes_1_5
+# plot_genes_6_10 <- ggplot(data = melt(MSBNoises[,c(1, 6:11)], id.vars = "generation"),
+#                            aes(x=generation, y = value, group = variable)) +
+#   geom_line(aes(colour = variable)) +
+#   ylab("Mean noise genotype") +
+#   ylim(ylim_noise_lower, ylim_noise_upper)
+# plot_genes_6_10
+# plot_genes_all <- ggplot(data = melt(MSBNoises, id.vars = "generation"),
+#                           aes(x=generation, y = value, group = variable)) +
+#   geom_line(color = genotypeNoiseColor, alpha = 0.3) +
+#   ylab("Mean noise genotype") +
+#   ylim(ylim_noise_lower, ylim_noise_upper)
+# plot_genes_all
+# plot_selGene <- ggplot(data = melt(MSBNoises[,c(1, indexSelGene + 1)], id.vars = "generation"),
+#                          aes(x=generation, y = value)) +
+#   geom_line(color = genotypeNoiseColor, alpha = 0.8) +
+#   ylab("Mean noise genotype") +
+#   ylim(ylim_noise_lower, ylim_noise_upper)
+# plot_selGene
+# 
+# plot_genes_1_5 <-
+#   ggplot(data = melt(MSBSbasals[,c(1:6)], id.vars = "generation"),
+#          aes(x=generation, y = value, group = variable)) +
+#   geom_line(aes(colour = variable)) +
+#   ylab("Mean sbasal genotype") +
+#   ylim(ylim_sbasal_lower, ylim_sbasal_upper)
+# plot_genes_1_5
+# plot_genes_6_10 <- ggplot(data = melt(MSBSbasals[,c(1, 6:11)], id.vars = "generation"),
+#                           aes(x=generation, y = value, group = variable)) +
+#   geom_line(aes(colour = variable)) +
+#   ylab("Mean sbasal genotype") +
+#   ylim(ylim_sbasal_lower, ylim_sbasal_upper)
+# plot_genes_6_10
+# plot_genes_all <- ggplot(data = melt(MSBSbasals, id.vars = "generation"),
+#                          aes(x=generation, y = value, group = variable)) +
+#   geom_line(color = genotypeSBasalColor, alpha = 0.3) +
+#   ylab("Mean sbasal genotype") +
+#   ylim(ylim_sbasal_lower, ylim_sbasal_upper)
+# plot_genes_all
+# plot_selGene <- ggplot(data = melt(MSBSbasals[,c(1, indexSelGene + 1)], id.vars = "generation"),
+#                        aes(x=generation, y = value)) +
+#   geom_line(color = genotypeSBasalColor, alpha = 0.8) +
+#   ylab("Mean sbasal genotype") +
+#   ylim(ylim_sbasal_lower, ylim_sbasal_upper)
+# plot_selGene
+```
+
+# Dir sel
+
+```{r read-dir-sel}
+# get sOpt value for the gene under dir.
+sOpt <- prmsV_39stab1dir[rownames(prmsV_39stab1dir) == "S_OPT", indexSelGene] +
+  prmsV_39stab1dir[rownames(prmsV_39stab1dir) == "S_OPT_DELTA", indexSelGene]
+
+dirHist <- MSBHist
+dirHist$rep <- 0
+dirNoises <- MSBNoises
+dirNoises$rep <- 0
+dirSbasals <- MSBSbasals
+dirSbasals$rep <-0 
+
+for(repNum in 1:numReps)
+{
+  # read hist file
+  #hist <- read.table(file = paste0(resultsPath, "dirSelOpp_rep", repNum, ".hist"), header = FALSE)
+  hist <- read.table(file = paste0(resultsPath, "dirSelPos_rep", repNum, ".hist"), header = FALSE)
+  colnames(hist) <- c("generation", meanPhenotColnames, varPhenotColnames, "meanF")
+  hist$rep <- repNum
+  hist$generation <- hist$generation + NUM_GENERATIONS_mutSelBalance
+  
+  # read noises file
+  #noises <- read.table(file = paste0(resultsPath,"dirSelOpp_rep", repNum, ".noises"), header = FALSE)
+  noises <- read.table(file = paste0(resultsPath,"dirSelPos_rep", repNum, ".noises"), header = FALSE)
+  colnames(noises) <- c("generation", meanGenotColnames)
+  noises$rep <- repNum
+  noises$generation <- noises$generation + NUM_GENERATIONS_mutSelBalance
+  
+  # read sbasals file
+  #sbasals <- read.table(file = paste0(resultsPath,"dirSelOpp_rep", repNum, ".sbasals"), header = FALSE)
+  sbasals <- read.table(file = paste0(resultsPath,"dirSelPos_rep", repNum, ".sbasals"), header = FALSE)
+  colnames(sbasals) <- c("generation", meanGenotColnames)
+  sbasals$rep <- repNum
+  sbasals$generation <- sbasals$generation + NUM_GENERATIONS_mutSelBalance
+  
+  dirHist <- rbind(dirHist, hist)
+  dirNoises <- rbind(dirNoises, noises)
+  dirSbasals <- rbind(dirSbasals, sbasals)
+}
+```
+
+```{r read-summarized-results}
+allReplEvolResults <- read.table(file = paste0(resultsPath, "allReplEvolResults_dirSelPos.txt"),
+#allReplEvolResults <- read.table(file = paste0(resultsPath, "allReplEvolResults_dirSelNeg.txt"),
+                                 sep = "\t", header = TRUE)
+#allReplEvolResultsSel <- allReplEvolResults[allReplEvolResults$scen == "sel", ]
+timeToAdapt <- as.numeric(as.character(allReplEvolResults$timeToAdapt[allReplEvolResults$gene == node_names[indexSelGene]]))
+generationAdaptationOccurs <- timeToAdapt + NUM_GENERATIONS_mutSelBalance
+```
+
+```{r plot-dir-sel}
+# peek
+plot_pop_fitness_dirSel <- 
+  ggplot(data = dirHist[!is.nan(dirHist$meanP_G1), ],
+         aes(x = generation, y = meanF, group = rep)) +
+  geom_line(color = fitnessColor, alpha = 0.8) +
+  ylab("Mean fitness") +
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 0.5) +
+  geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 0.5) +
+  ylim(-0.1, 1)
+plot_pop_fitness_dirSel
+ggsave(filename = "mutSelBalance-dirScenEvol-continuation-fitness.png",
+       plot = plot_pop_fitness_dirSel,
+       path = plotsFolderWithPath,
+       device = "png", scale = 2, width = 6, height = 5, units = "cm",
+       dpi = 300, limitsize = TRUE,
+       bg = "white")
+
+plot_phenotypes_dirSel <- ggplot(data = dirHist[ , c(1, indexSelGene + 1, dim(dirHist)[2])],
+                                  aes(x = generation, y = get(paste0("meanP_", node_names[indexSelGene])))) +
+  annotate("rect", xmin = 0, xmax = NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS,
+           ymin = sOpt - S_MAX*adaptationResponseCriteria, 
+           ymax = sOpt + S_MAX*adaptationResponseCriteria,
+           alpha = 0.25, fill = "gray") +
+  geom_point(aes(group = rep), size = 0.1, alpha = 0.5, color = phenotypeColor) +
+  geom_line(aes(group = rep), size = 0.25, alpha = 0.5, color = phenotypeColor) +
+  stat_summary(fun = mean, geom = 'line', size = 1.5, color = phenotypeColor) +
+  geom_hline(yintercept = sOpt, linetype = "dashed") +
+  annotate('text', x = 1500, y = sOpt + 3, label = 'New optimum') + 
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 1, linetype = "solid") +
+  geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 1, linetype = "solid") +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=16, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=16, face="bold"),
+        axis.title.y = element_text(size=16, face="bold"),
+        axis.text.x = element_text(size=10, face="bold"),
+        axis.text.y = element_text(size=10, face="bold"),
+        strip.text.x = element_text(size=10, face="bold"),
+        strip.text.y = element_text(size=10, face="bold"),
+        legend.position = "top") +
+  #annotate('text', x = NUM_GENERATIONS_mutSelBalance/2, y = 15, label = "MS balance") + 
+  #annotate('text', x = (NUM_GENERATIONS_mutSelBalance + generationAdaptationOccurs)/2,
+  #         y = 15, label = "Adaptation") + 
+  #annotate('text', x = (generationAdaptationOccurs + NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS)/2,
+  #         y = 15, label = "Postadaptation") + 
+  geom_label(x = NUM_GENERATIONS_mutSelBalance/2, y = 15, label = "MS balance") +
+  geom_label(x = (NUM_GENERATIONS_mutSelBalance + generationAdaptationOccurs)/2,
+             y = 15, label = "Adaptation") +
+  geom_label(x = (generationAdaptationOccurs + NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS)/2,
+             y = 15, label = "Postadaptation") +
+  labs(y = "Mean expression level") + 
+  ylim(0, 100)
+#plot_phenotypes_dirSel
+ggsave(filename = "plot_phenotypes_dirSel.png",
+       plot = plot_phenotypes_dirSel,
+       path = plotsFolderWithPath,
+       device = "png", scale = 2.5, width = 6, height = 5, units = "cm",
+       dpi = 300, limitsize = TRUE,
+       bg = "white")
+
+plot_selGene_vars_dirSel <- ggplot(data = dirHist[ , c(1, (indexSelGene + 1 + NUM_NODES), dim(dirHist)[2])], 
+                                     aes(x = generation, y = get(paste0("varP_", node_names[indexSelGene])))) +
+  geom_point(aes(group = rep), size = 0.1, alpha = 0.5, color = noiseColor) +
+  geom_line(aes(group = rep), size = 0.25, alpha = 0.5, color = noiseColor) +
+  stat_summary(data = dirHist[dirHist$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, (indexSelGene + 1 + NUM_NODES), dim(dirHist)[2])], 
+                                     aes(x = generation, y = get(paste0("varP_", node_names[indexSelGene]))),
+               fun = mean, geom = 'line', size = 1.5, color = noiseColor) +
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 1, linetype = "solid") +
+  geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 1, linetype = "solid") +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=16, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=16, face="bold"),
+        axis.title.y = element_text(size=16, face="bold"),
+        axis.text.x = element_text(size=10, face="bold"),
+        axis.text.y = element_text(size=10, face="bold"),
+        strip.text.x = element_text(size=10, face="bold"),
+        strip.text.y = element_text(size=10, face="bold"),
+        legend.position = "top") +
+  #annotate('text', x = NUM_GENERATIONS_mutSelBalance/2, y = 15, label = "MutSel balance") + 
+  #annotate('text', x = (NUM_GENERATIONS_mutSelBalance + generationAdaptationOccurs)/2,
+  #         y = 15, label = "Adaptation") + 
+  #annotate('text', x = (generationAdaptationOccurs + NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS)/2,
+  #         y = 15, label = "Postadaptation") + 
+  #geom_label(x = NUM_GENERATIONS_mutSelBalance/2, y = 15, label = "MS balance") +
+  #geom_label(x = (NUM_GENERATIONS_mutSelBalance + generationAdaptationOccurs)/2,
+  #           y = 15, label = "Adaptation") +
+  #geom_label(x = (generationAdaptationOccurs + NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS)/2,
+  #           y = 15, label = "Postadaptation") +
+  geom_smooth(data = dirHist[dirHist$generation < NUM_GENERATIONS_mutSelBalance,
+                              c(1, (indexSelGene + 1 + NUM_NODES), dim(dirHist)[2])],
+              color = "black", linetype = "dotted") +
+  geom_smooth(data = dirHist[dirHist$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, (indexSelGene + 1 + NUM_NODES), dim(dirHist)[2])],
+              color = "black", linetype = "dotted") +
+  ylab("Variance of expression level")
+  #ylim(-1, 100)
+#plot_selGene_vars_dirSel
+ggsave(filename = "plot_selGene_vars_dirSel.png",
+       plot = plot_selGene_vars_dirSel,
+       path = plotsFolderWithPath,
+       device = "png", scale = 2.5, width = 6, height = 5, units = "cm",
+       dpi = 300, limitsize = TRUE,
+       bg = "white")
+
+plot_selGene_noise_dirSel <- ggplot(data = dirNoises[ , c(1, indexSelGene + 1, dim(dirNoises)[2])], 
+                       aes(x = generation, y = get(paste0("meanG_", node_names[indexSelGene])))) +
+  geom_point(aes(group = rep), size = 0.1, alpha = 0.5, color = genotypeNoiseColor) +
+  geom_line(aes(group = rep), size = 0.25, alpha = 0.5, color = genotypeNoiseColor) +
+  stat_summary(data = dirNoises[dirNoises$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(dirNoises)[2])], 
+                                     aes(x = generation, y = get(paste0("meanG_", node_names[indexSelGene]))),
+               fun = mean, geom = 'line', size = 1.5, color = genotypeNoiseColor) +
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 1, linetype = "solid") +
+  geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 1, linetype = "solid") +
+  geom_smooth(data = dirNoises[dirNoises$generation < NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(dirNoises)[2])],
+              color = "black", linetype = "dotted") +
+  geom_smooth(data = dirNoises[dirNoises$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(dirNoises)[2])],
+              color = "black", linetype = "dotted") +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=16, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=16, face="bold"),
+        axis.title.y = element_text(size=16, face="bold"),
+        axis.text.x = element_text(size=10, face="bold"),
+        axis.text.y = element_text(size=10, face="bold"),
+        strip.text.x = element_text(size=10, face="bold"),
+        strip.text.y = element_text(size=10, face="bold"),
+        legend.position = "top") +
+  #geom_smooth(color = "black", linetype = "dotted") +
+  ylab("Mean noise genotype")
+  #ylim(-1, 15)
+#plot_selGene_noise_dirSel
+ggsave(filename = "plot_selGene_noise_dirSel.png",
+       plot = plot_selGene_noise_dirSel,
+       path = plotsFolderWithPath,
+       device = "png", scale = 2.5, width = 6, height = 5, units = "cm",
+       dpi = 300, limitsize = TRUE,
+       bg = "white")
+
+plot_selGene_sbasal_dirSel <- ggplot(data = dirSbasals[ , c(1, indexSelGene + 1, dim(dirSbasals)[2])], 
+                       aes(x = generation, y = get(paste0("meanG_", node_names[indexSelGene])))) +
+  geom_point(aes(group = rep), size = 0.1, alpha = 0.5, color = genotypeSBasalColor) +
+  geom_line(aes(group = rep), size = 0.25, alpha = 0.5, color = genotypeSBasalColor) +
+  stat_summary(data = dirSbasals[dirSbasals$generation > NUM_GENERATIONS_mutSelBalance,
+                                 c(1, indexSelGene + 1, dim(dirSbasals)[2])], 
+                                     aes(x = generation, y = get(paste0("meanG_", node_names[indexSelGene]))),
+               fun = mean, geom = 'line', size = 1.5, color = genotypeSBasalColor) +
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 1, linetype = "solid") +
+  geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 1, linetype = "solid") +
+  geom_smooth(data = dirSbasals[dirSbasals$generation < NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(dirSbasals)[2])],
+              color = "black", linetype = "dotted") +
+  geom_smooth(data = dirSbasals[dirSbasals$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(dirSbasals)[2])],
+              color = "black", linetype = "dotted") +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=16, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=16, face="bold"),
+        axis.title.y = element_text(size=16, face="bold"),
+        axis.text.x = element_text(size=10, face="bold"),
+        axis.text.y = element_text(size=10, face="bold"),
+        strip.text.x = element_text(size=10, face="bold"),
+        strip.text.y = element_text(size=10, face="bold"),
+        legend.position = "top") +
+  ylab("Mean sbasal genotype") +
+  ylim(-1, 100)
+#plot_selGene_sbasal_dirSel
+ggsave(filename = "plot_selGene_sbasal_dirSel.png",
+       plot = plot_selGene_sbasal_dirSel,
+       path = plotsFolderWithPath,
+       device = "png", scale = 2.5, width = 6, height = 5, units = "cm",
+       dpi = 300, limitsize = TRUE,
+       bg = "white")
+```
+
+## joint plot
+
+```{r joint-plot}
+plot_joint <- cowplot::plot_grid(plot_phenotypes_dirSel,
+                                 plot_selGene_vars_dirSel,
+                                 plot_selGene_noise_dirSel,
+                                 plot_selGene_sbasal_dirSel,
+                                 scale = c(0.95, 0.95, 0.95, 0.95),
+                                 labels = "AUTO",
+                                 label_size = 20,
+                                 label_fontface = "bold",
+                                 align = "v",
+                                 ncol = 1)
+ggsave(filename = paste0("plot_joint.png"),
+       plot = plot_joint, 
+       bg = "white",
+       path = plotsFolderWithPath, 
+       device = "png", 
+       scale = 1.5, height = 25, width = 8, units = "cm",
+       dpi = 300, limitsize = TRUE)
+```
+
+# Fluct sel
+
+```{r read-dir-sel}
+# get sOpt value for the gene under dir.
+sOpt1 <- prmsV_39stab1dir[rownames(prmsV_39stab1dir) == "S_OPT", indexSelGene] +
+  prmsV_39stab1dir[rownames(prmsV_39stab1dir) == "S_OPT_DELTA", indexSelGene]
+sOpt2 <- prmsV_39stab1dir[rownames(prmsV_39stab1dir) == "S_OPT", indexSelGene] -
+  prmsV_39stab1dir[rownames(prmsV_39stab1dir) == "S_OPT_DELTA", indexSelGene]
+
+fluctHist <- MSBHist
+fluctHist$rep <- 0
+fluctNoises <- MSBNoises
+fluctNoises$rep <- 0
+fluctSbasals <- MSBSbasals
+fluctSbasals$rep <-0 
+
+for(repNum in 1:numReps)
+{
+  # read hist file
+  hist <- read.table(file = paste0(resultsPath, "fluctSel_rep", repNum, ".hist"), header = FALSE)
+  colnames(hist) <- c("generation", meanPhenotColnames, varPhenotColnames, "meanF")
+  hist$rep <- repNum
+  hist$generation <- hist$generation + NUM_GENERATIONS_mutSelBalance
+  
+  # read noises file
+  noises <- read.table(file = paste0(resultsPath,"fluctSel_rep", repNum, ".noises"), header = FALSE)
+  colnames(noises) <- c("generation", meanGenotColnames)
+  noises$rep <- repNum
+  noises$generation <- noises$generation + NUM_GENERATIONS_mutSelBalance
+  
+  # read sbasals file
+  sbasals <- read.table(file = paste0(resultsPath,"fluctSel_rep", repNum, ".sbasals"), header = FALSE)
+  colnames(sbasals) <- c("generation", meanGenotColnames)
+  sbasals$rep <- repNum
+  sbasals$generation <- sbasals$generation + NUM_GENERATIONS_mutSelBalance
+  
+  fluctHist <- rbind(fluctHist, hist)
+  fluctNoises <- rbind(fluctNoises, noises)
+  fluctSbasals <- rbind(fluctSbasals, sbasals)
+}
+```
+
+```{r read-summarized-results}
+allReplEvolResults <- read.table(file = paste0(resultsPath, "allReplEvolResults.txt"),
+                                 sep = "\t", header = TRUE)
+allReplEvolResultsSel <- allReplEvolResults[allReplEvolResults$scen == "sel", ]
+timeToAdapt <- allReplEvolResultsSel$timeToAdapt[allReplEvolResultsSel$gene == node_names[indexSelGene]] 
+generationAdaptationOccurs <- timeToAdapt + NUM_GENERATIONS_mutSelBalance
+```
+
+```{r plot-dir-sel}
+# peek
+plot_pop_fitness_dirSel <- 
+  ggplot(data = fluctHist[!is.nan(fluctHist$meanP_G1), ],
+         aes(x = generation, y = meanF, group = rep)) +
+  geom_line(color = fitnessColor, alpha = 0.8) +
+  ylab("Mean fitness") +
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 0.5) +
+  #geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 0.5) +
+  ylim(-0.1, 1)
+plot_pop_fitness_dirSel
+ggsave(filename = "mutSelBalance-dirScenEvol-continuation-fitness.png",
+       plot = plot_pop_fitness_dirSel,
+       path = plotsFolderWithPath,
+       device = "png", scale = 2, width = 6, height = 5, units = "cm",
+       dpi = 300, limitsize = TRUE,
+       bg = "white")
+
+plot_phenotypes_fluctSel <- ggplot(data = fluctHist[ , c(1, indexSelGene + 1, dim(fluctHist)[2])],
+                                  aes(x = generation, y = get(paste0("meanP_", node_names[indexSelGene])))) +
+  #annotate("rect", xmin = 0, xmax = NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS,
+  #         ymin = sOpt - sOpt*adaptationResponseCriteria, 
+  #         ymax = sOpt + sOpt*adaptationResponseCriteria,
+  #         alpha = 0.25, fill = "gray") +
+  geom_point(aes(group = rep), size = 0.1, alpha = 0.5, color = phenotypeColor) +
+  geom_line(aes(group = rep), size = 0.25, alpha = 0.5, color = phenotypeColor) +
+  stat_summary(fun = mean, geom = 'line', size = 1.5, color = phenotypeColor) +
+  geom_hline(yintercept = sOpt1, linetype = "dashed") +
+  geom_hline(yintercept = sOpt2, linetype = "dashed") +
+  #annotate('text', x = 1500, y = sOpt + 3, label = 'New optimum') + 
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 1, linetype = "solid") +
+  #geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 1, linetype = "solid") +
+  #annotate('text', x = NUM_GENERATIONS_mutSelBalance/2, y = 15, label = "MS balance") + 
+  #annotate('text', x = (NUM_GENERATIONS_mutSelBalance + generationAdaptationOccurs)/2,
+  #         y = 15, label = "Adaptation") + 
+  #annotate('text', x = (generationAdaptationOccurs + NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS)/2,
+  #         y = 15, label = "Postadaptation") + 
+  #geom_label(x = NUM_GENERATIONS_mutSelBalance/2, y = 15, label = "MS balance") +
+  #geom_label(x = (NUM_GENERATIONS_mutSelBalance + generationAdaptationOccurs)/2,
+  #           y = 15, label = "Adaptation") +
+  #geom_label(x = (generationAdaptationOccurs + NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS)/2,
+  #           y = 15, label = "Postadaptation") +
+  labs(y = "Mean expression level") + 
+  ylim(0, 100)
+#plot_phenotypes_dirSel
+ggsave(filename = "plot_phenotypes_fluctSel.png",
+       plot = plot_phenotypes_fluctSel,
+       path = plotsFolderWithPath,
+       device = "png", scale = 2.5, width = 6, height = 5, units = "cm",
+       dpi = 300, limitsize = TRUE,
+       bg = "white")
+
+plot_selGene_vars_fluctSel <- ggplot(data = fluctHist[ , c(1, (indexSelGene + 1 + NUM_NODES), dim(fluctHist)[2])], 
+                                     aes(x = generation, y = get(paste0("varP_", node_names[indexSelGene])))) +
+  geom_point(aes(group = rep), size = 0.1, alpha = 0.5, color = noiseColor) +
+  geom_line(aes(group = rep), size = 0.25, alpha = 0.5, color = noiseColor) +
+  stat_summary(data = fluctHist[fluctHist$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, (indexSelGene + 1 + NUM_NODES), dim(fluctHist)[2])], 
+                                     aes(x = generation, y = get(paste0("varP_", node_names[indexSelGene]))),
+               fun = mean, geom = 'line', size = 1.5, color = noiseColor) +
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 1, linetype = "solid") +
+  #geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 1, linetype = "solid") +
+  #annotate('text', x = NUM_GENERATIONS_mutSelBalance/2, y = 15, label = "MutSel balance") + 
+  #annotate('text', x = (NUM_GENERATIONS_mutSelBalance + generationAdaptationOccurs)/2,
+  #         y = 15, label = "Adaptation") + 
+  #annotate('text', x = (generationAdaptationOccurs + NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS)/2,
+  #         y = 15, label = "Postadaptation") + 
+  #geom_label(x = NUM_GENERATIONS_mutSelBalance/2, y = 15, label = "MS balance") +
+  #geom_label(x = (NUM_GENERATIONS_mutSelBalance + generationAdaptationOccurs)/2,
+  #           y = 15, label = "Adaptation") +
+  #geom_label(x = (generationAdaptationOccurs + NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS)/2,
+  #           y = 15, label = "Postadaptation") +
+  geom_smooth(data = fluctHist[fluctHist$generation < NUM_GENERATIONS_mutSelBalance,
+                              c(1, (indexSelGene + 1 + NUM_NODES), dim(fluctHist)[2])],
+              color = "black", linetype = "dotted") +
+  geom_smooth(data = fluctHist[fluctHist$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, (indexSelGene + 1 + NUM_NODES), dim(fluctHist)[2])],
+              color = "black", linetype = "dotted") +
+  ylab("Variance of expression level")
+  #ylim(-1, 100)
+#plot_selGene_vars_dirSel
+ggsave(filename = "plot_selGene_vars_fluctSel.png",
+       plot = plot_selGene_vars_fluctSel,
+       path = plotsFolderWithPath,
+       device = "png", scale = 2.5, width = 6, height = 5, units = "cm",
+       dpi = 300, limitsize = TRUE,
+       bg = "white")
+
+plot_selGene_noise_fluctSel <- ggplot(data = fluctNoises[ , c(1, indexSelGene + 1, dim(fluctNoises)[2])], 
+                       aes(x = generation, y = get(paste0("meanG_", node_names[indexSelGene])))) +
+  geom_point(aes(group = rep), size = 0.1, alpha = 0.5, color = genotypeNoiseColor) +
+  geom_line(aes(group = rep), size = 0.25, alpha = 0.5, color = genotypeNoiseColor) +
+  stat_summary(data = fluctNoises[fluctNoises$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(fluctNoises)[2])], 
+                                     aes(x = generation, y = get(paste0("meanG_", node_names[indexSelGene]))),
+               fun = mean, geom = 'line', size = 1.5, color = genotypeNoiseColor) +
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 1, linetype = "solid") +
+  #geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 1, linetype = "solid") +
+  geom_smooth(data = fluctNoises[fluctNoises$generation < NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(fluctNoises)[2])],
+              color = "black", linetype = "dotted") +
+  geom_smooth(data = fluctNoises[fluctNoises$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(fluctNoises)[2])],
+              color = "black", linetype = "dotted") +
+  #geom_smooth(color = "black", linetype = "dotted") +
+  ylab("Mean noise genotype")
+  #ylim(-1, 15)
+#plot_selGene_noise_dirSel
+ggsave(filename = "plot_selGene_noise_fluctSel.png",
+       plot = plot_selGene_noise_fluctSel,
+       path = plotsFolderWithPath,
+       device = "png", scale = 2.5, width = 6, height = 5, units = "cm",
+       dpi = 300, limitsize = TRUE,
+       bg = "white")
+
+plot_selGene_sbasal_fluctSel <- ggplot(data = fluctSbasals[ , c(1, indexSelGene + 1, dim(fluctSbasals)[2])], 
+                       aes(x = generation, y = get(paste0("meanG_", node_names[indexSelGene])))) +
+  geom_point(aes(group = rep), size = 0.1, alpha = 0.5, color = genotypeSBasalColor) +
+  geom_line(aes(group = rep), size = 0.25, alpha = 0.5, color = genotypeSBasalColor) +
+  stat_summary(data = fluctSbasals[fluctSbasals$generation > NUM_GENERATIONS_mutSelBalance,
+                                 c(1, indexSelGene + 1, dim(fluctSbasals)[2])], 
+                                     aes(x = generation, y = get(paste0("meanG_", node_names[indexSelGene]))),
+               fun = mean, geom = 'line', size = 1.5, color = genotypeSBasalColor) +
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 1, linetype = "solid") +
+  #geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 1, linetype = "solid") +
+  geom_smooth(data = fluctSbasals[fluctSbasals$generation < NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(fluctSbasals)[2])],
+              color = "black", linetype = "dotted") +
+  geom_smooth(data = fluctSbasals[fluctSbasals$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(fluctSbasals)[2])],
+              color = "black", linetype = "dotted") +
+  ylab("Mean sbasal genotype") +
+  ylim(-1, 100)
+#plot_selGene_sbasal_dirSel
+ggsave(filename = "plot_selGene_sbasal_fluctSel.png",
+       plot = plot_selGene_sbasal_fluctSel,
+       path = plotsFolderWithPath,
+       device = "png", scale = 2.5, width = 6, height = 5, units = "cm",
+       dpi = 300, limitsize = TRUE,
+       bg = "white")
+
+```
+
+```{r joint-plot}
+plot_joint <- cowplot::plot_grid(plot_phenotypes_fluctSel,
+                                 plot_selGene_vars_fluctSel,
+                                 plot_selGene_noise_fluctSel,
+                                 plot_selGene_sbasal_fluctSel,
+
+                                 scale = c(0.95, 0.95, 0.95, 0.95),
+                                 labels = "AUTO",
+                                 label_size = 20,
+                                 label_fontface = "bold",
+                                 ncol = 1)
+ggsave(filename = paste0("plot_joint_stabSelGene.png"),
+       plot = plot_joint, 
+       bg = "white",
+       path = plotsFolderWithPath, 
+       device = "png", 
+       scale = 1.5, height = 25, width = 10, units = "cm",
+       dpi = 300, limitsize = TRUE)
+```

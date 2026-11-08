@@ -1,0 +1,1557 @@
+---
+title: "Simulations results: change of genotypes"
+author: "Natasha Puzovic (puzovic@evolbio.mpg.de)"
+date: "Jan 31, 2023"
+output:
+  html_document:
+    df_print: paged
+    number_sections: yes
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+
+# Setup
+
+```{r, setup, include=FALSE}
+resultsFolderAll = "20230213_ER_40node/"
+resultsPathAll = paste0("../results/", resultsFolderAll)
+
+#resultsFolder_DirSelPos = "20230213_ER_40node_dirSelPos/"
+#resultsPath_DirSelPos = paste0("../results/", resultsFolder_DirSelPos)
+#resultsFolder_DirSelNeg = "20230126_ER_40node_dirSelNeg/"
+#resultsPath_DirSelNeg = paste0("../results/", resultsFolder_DirSelNeg)
+#resultsFolder_DirSelJoint = "20230126_ER_40node_dirSelJoint/"
+#resultsPath_DirSelJoint = paste0("../results/", resultsFolder_DirSelJoint)
+#resultsFolder_fluctSel = "20230126_ER_40node_fluctSel/"
+#resultsPath_fluctSel = paste0("../results/", resultsFolder_fluctSel)
+plotsFolderWithPath_validation = "../plots/validation"
+if (!dir.exists(plotsFolderWithPath_validation))
+{
+  dir.create(plotsFolderWithPath_validation)
+}
+plotsFolderWithPath_dirSelPos = "../plots/mainResults_dirSelPos"
+if (!dir.exists(plotsFolderWithPath_dirSelPos))
+{
+  dir.create(plotsFolderWithPath_dirSelPos)
+}
+plotsFolderWithPath_dirSelNeg = "../plots/mainResults_dirSelNeg"
+if (!dir.exists(plotsFolderWithPath_dirSelNeg))
+{
+  dir.create(plotsFolderWithPath_dirSelNeg)
+}
+plotsFolderWithPath_dirSelJoint = "../plots/mainResults_dirSelJoint"
+if (!dir.exists(plotsFolderWithPath_dirSelJoint))
+{
+  dir.create(plotsFolderWithPath_dirSelJoint)
+}
+plotsFolderWithPath_fluctSel = "../plots/mainResults_fluctSel"
+if (!dir.exists(plotsFolderWithPath_fluctSel))
+{
+  dir.create(plotsFolderWithPath_fluctSel)
+}
+
+resultsFolderForTimePlots = "20230213_ER_40node/net_14/"
+resultsFolderForTimePlotsPath = paste0("../results/", resultsFolderForTimePlots)
+
+numReps = 10
+adaptationResponseCriteria = 0.1
+```
+
+Load packages & misc
+
+```{r load-packages}
+# Package list
+packages <- c("nlme",
+              "MuMIn", # for r.squared in lme models
+              "ggplot2",
+              "ggpubr", # for the pubclean theme
+              "ggridges",
+              "gridExtra",
+              "cowplot", # for arranging plots
+              "infotheo",
+              "lme4",
+              "car", # for vif measure
+              "RColorBrewer", # for color palettes
+              "latex2exp", # for latex notation in the plots
+              "reshape2",
+              "formattable", # for nice tables
+              "htmltools", # for outputting the table
+              "webshot", # for outputting the table
+              "ggdist") # for half violin plots
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+
+library(nlme)
+library(MuMIn) # for r.squared in lme models
+library(ggplot2)
+library(ggpubr) # for the pubclean theme
+library(ggridges)
+library(gridExtra)
+library(cowplot) # for arranging plots
+library(infotheo)
+library(lme4)
+library(car) # for vif measure
+library(RColorBrewer) # for color palettes
+library(latex2exp) # for latex notation in the plots
+library(reshape2)
+library(corrplot) # for correlation plots
+library(formattable) # for nice tables
+library(htmltools) # for outputting the table
+library(webshot) # for outputting the tabl
+library(ggdist) # for half violin plots
+library(rstatix) # for stats tables to plot on top of plots
+
+# MI 
+#calcInformation <- function (v1, v2, binNum) {
+  
+  # discretize 
+#  d_v1 <- discretize(v1, nbins = binNum);
+#  d_v2 <- discretize(v2, nbins = binNum)
+  
+  # mutual information
+#  I_v1v2 <- mutinformation(d_v1, d_v2);
+
+#  return("MI" = I_v1v2)
+#}
+
+# colors for plots
+noiseColor = "#01665e"
+genotypeNoiseColor = "#7b3294"
+genotypeSBasalColor = "#08519c"
+phenotypeColor = "#d95f0e"
+fitnessColor = "#e78ac3"
+neutralityColor = "darkgray"
+customGreenAIC = "#41ab5d"
+
+# bin numbers and number of permutations
+#binNum = 30
+#numPermutations = 10000
+```
+
+# Time plots
+
+Time plots of the evolution of noise and mean under Fluctuating selection
+
+## Read params
+read params from the establishment of mutation-selection balance & scenEvol
+
+```{r read-params}
+# read params (mutation-selection balance)
+prmsS_forMutSelBalance <- read.table(file = paste0(resultsFolderForTimePlotsPath, "prmsS_forMutSelBalance"), 
+                                     sep = " ", header = FALSE, row.names = 1)
+NUM_NODES = prmsS_forMutSelBalance[rownames(prmsS_forMutSelBalance) == "NUM_NODES", ]
+NUM_GENERATIONS_mutSelBalance = prmsS_forMutSelBalance[rownames(prmsS_forMutSelBalance) == "NUM_GENERATIONS", ]
+prmsV_forMutSelBalance <- as.matrix(read.table(paste0(resultsFolderForTimePlotsPath, "prmsV_forMutSelBalance"),
+                                               sep = " ", header = FALSE, row.names = 1))
+ylim_noise_lower <- prmsS_forMutSelBalance[which(rownames(prmsS_forMutSelBalance) == "MUTATION_DISTR_NOISE_LOWERBOUND"), ]
+ylim_noise_upper <- prmsS_forMutSelBalance[which(rownames(prmsS_forMutSelBalance) == "MUTATION_DISTR_NOISE_UPPERBOUND"), ]
+ylim_sbasal_lower <- prmsS_forMutSelBalance[which(rownames(prmsS_forMutSelBalance) == "MUTATION_DISTR_SBASAL_LOWERBOUND"), ]
+ylim_sbasal_upper <- prmsS_forMutSelBalance[which(rownames(prmsS_forMutSelBalance) == "MUTATION_DISTR_SBASAL_UPPERBOUND"), ]
+
+# calculate indices of genotypes, phenotypes, and fitness
+numIDCols = 2
+indIDCols = c(1, 2)
+indGenotNoiseCols = seq(from = numIDCols  + 1, to = numIDCols  + NUM_NODES, by = 1)
+indGenotSBasalCols = seq(from = numIDCols  + NUM_NODES + 1, to = numIDCols  + 2*NUM_NODES, by = 1)
+indGenotNetCols = seq(from = numIDCols  + 2*NUM_NODES + 1, to = numIDCols  + 2*NUM_NODES + NUM_NODES^2, by = 1)
+indPhenotypeCols = seq(from = numIDCols  + 2*NUM_NODES + NUM_NODES^2 + 1, to = numIDCols  + 3*NUM_NODES + NUM_NODES^2, by = 1)
+indFitnessCol = numIDCols + length(indGenotNoiseCols) + length(indGenotSBasalCols) + 
+                length(indGenotNetCols) + length(indPhenotypeCols) + 1
+pop0FirstgenRealized <- read.table(paste0(resultsFolderForTimePlotsPath, "pop.MSB.firstgen"),
+                                   sep = " ", header = FALSE)
+sSteady = pop0FirstgenRealized[1, indPhenotypeCols]
+
+# names
+node_names = paste("G", 1:NUM_NODES, sep = "")
+meanGenotColnames <- paste("meanG_", node_names, sep = "")
+meanPhenotColnames <- paste("meanP_", node_names, sep = "")
+varPhenotColnames <- paste("varP_", node_names, sep = "")
+
+# read params (dirSel)
+#prmsS_sel <- read.table(file = paste0(resultsPath, "prmsS_sel_oppDir_rep1"),
+prmsS_sel <- read.table(file = paste0(resultsFolderForTimePlotsPath, "prmsS_fluctSel_rep1"),
+                        sep = " ", header = FALSE, row.names = 1)
+NUM_GENERATIONS = prmsS_sel[rownames(prmsS_sel) == "NUM_GENERATIONS", ]
+S_MAX = prmsS_sel[rownames(prmsS_sel) == "S_MAX", ]
+prmsV_39stab1dir <- as.matrix(read.table(paste0(resultsFolderForTimePlotsPath, "prmsV_39stab_1dirSelPos"),
+                                         sep = " ", header = FALSE, row.names = 1))
+#prmsV_39stab1dir <- as.matrix(read.table(paste0(resultsPath, "prmsV_39stab_1dirNeg"),
+#                                         sep = " ", header = FALSE, row.names = 1))
+
+# read params (fluctSel)
+#prmsS_fluctSel <- read.table(file = paste0(resultsPath, "prmsS_fluctSel_rep1"),
+#                        sep = " ", header = FALSE, row.names = 1)
+#NUM_GENERATIONS = prmsS_sel[rownames(prmsS_sel) == "NUM_GENERATIONS", ]
+
+# which genes had a change of selection regime?
+indexSelGene <- as.integer(which(prmsV_39stab1dir["S_OPT_DELTA", ] != 0))
+```
+
+## Time plot of mutSelBalance
+Look at the dynamics of establishment of mutation-selection balance.
+
+```{r mutSelBalance}
+# read hist file
+MSBHist <- read.table(paste0(resultsFolderForTimePlotsPath, "mutSelBalance.hist"), header = FALSE)
+colnames(MSBHist) <- c("generation", meanPhenotColnames, varPhenotColnames, "meanF")
+# read noises file
+MSBNoises <- read.table(paste0(resultsFolderForTimePlotsPath, "mutSelBalance.noises"), header = FALSE)
+colnames(MSBNoises) <- c("generation", meanGenotColnames)
+# read sbasals file
+MSBSbasals <- read.table(paste0(resultsFolderForTimePlotsPath, "mutSelBalance.sbasals"), header = FALSE)
+colnames(MSBSbasals) <- c("generation", meanGenotColnames)
+
+# which genes are not expressed at steady state?
+which(sSteady == 0)
+
+# peek
+# plot_pop_fitness <-
+#   ggplot(data = MSBHist[!is.nan(MSBHist$meanP_G1), ],
+#          aes(x=generation, y = meanF)) +
+#   geom_line(color = fitnessColor) +
+#   ylab("Mean fitness") +
+#   ylim(-0.1, 1.1)
+# plot_pop_fitness
+# 
+# plot_genes_1_5 <-
+#   ggplot(data = melt(MSBNoises[,c(1:6)], id.vars = "generation"),
+#          aes(x=generation, y = value, group = variable)) +
+#   geom_line(aes(colour = variable)) +
+#   ylab("Mean noise genotype") +
+#   ylim(ylim_noise_lower, ylim_noise_upper)
+# plot_genes_1_5
+# plot_genes_6_10 <- ggplot(data = melt(MSBNoises[,c(1, 6:11)], id.vars = "generation"),
+#                            aes(x=generation, y = value, group = variable)) +
+#   geom_line(aes(colour = variable)) +
+#   ylab("Mean noise genotype") +
+#   ylim(ylim_noise_lower, ylim_noise_upper)
+# plot_genes_6_10
+# plot_genes_all <- ggplot(data = melt(MSBNoises, id.vars = "generation"),
+#                           aes(x=generation, y = value, group = variable)) +
+#   geom_line(color = genotypeNoiseColor, alpha = 0.3) +
+#   ylab("Mean noise genotype") +
+#   ylim(ylim_noise_lower, ylim_noise_upper)
+# plot_genes_all
+# plot_selGene <- ggplot(data = melt(MSBNoises[,c(1, indexSelGene + 1)], id.vars = "generation"),
+#                          aes(x=generation, y = value)) +
+#   geom_line(color = genotypeNoiseColor, alpha = 0.8) +
+#   ylab("Mean noise genotype") +
+#   ylim(ylim_noise_lower, ylim_noise_upper)
+# plot_selGene
+# 
+# plot_genes_1_5 <-
+#   ggplot(data = melt(MSBSbasals[,c(1:6)], id.vars = "generation"),
+#          aes(x=generation, y = value, group = variable)) +
+#   geom_line(aes(colour = variable)) +
+#   ylab("Mean sbasal genotype") +
+#   ylim(ylim_sbasal_lower, ylim_sbasal_upper)
+# plot_genes_1_5
+# plot_genes_6_10 <- ggplot(data = melt(MSBSbasals[,c(1, 6:11)], id.vars = "generation"),
+#                           aes(x=generation, y = value, group = variable)) +
+#   geom_line(aes(colour = variable)) +
+#   ylab("Mean sbasal genotype") +
+#   ylim(ylim_sbasal_lower, ylim_sbasal_upper)
+# plot_genes_6_10
+# plot_genes_all <- ggplot(data = melt(MSBSbasals, id.vars = "generation"),
+#                          aes(x=generation, y = value, group = variable)) +
+#   geom_line(color = genotypeSBasalColor, alpha = 0.3) +
+#   ylab("Mean sbasal genotype") +
+#   ylim(ylim_sbasal_lower, ylim_sbasal_upper)
+# plot_genes_all
+# plot_selGene <- ggplot(data = melt(MSBSbasals[,c(1, indexSelGene + 1)], id.vars = "generation"),
+#                        aes(x=generation, y = value)) +
+#   geom_line(color = genotypeSBasalColor, alpha = 0.8) +
+#   ylab("Mean sbasal genotype") +
+#   ylim(ylim_sbasal_lower, ylim_sbasal_upper)
+# plot_selGene
+```
+
+## Fluct sel
+
+```{r read-dir-sel}
+# get sOpt value for the gene under dir.
+sOpt1 <- prmsV_39stab1dir[rownames(prmsV_39stab1dir) == "S_OPT", indexSelGene] +
+  prmsV_39stab1dir[rownames(prmsV_39stab1dir) == "S_OPT_DELTA", indexSelGene]
+sOpt2 <- prmsV_39stab1dir[rownames(prmsV_39stab1dir) == "S_OPT", indexSelGene] -
+  prmsV_39stab1dir[rownames(prmsV_39stab1dir) == "S_OPT_DELTA", indexSelGene]
+
+dirHist <- MSBHist
+dirHist$rep <- 0
+dirNoises <- MSBNoises
+dirNoises$rep <- 0
+dirSbasals <- MSBSbasals
+dirSbasals$rep <-0 
+
+for(repNum in 1:numReps)
+{
+  # read hist file
+  #hist <- read.table(file = paste0(resultsPath, "dirSelOpp_rep", repNum, ".hist"), header = FALSE)
+  hist <- read.table(file = paste0(resultsFolderForTimePlotsPath, "fluctSel_rep", repNum, ".hist"), header = FALSE)
+  colnames(hist) <- c("generation", meanPhenotColnames, varPhenotColnames, "meanF")
+  hist$rep <- repNum
+  hist$generation <- hist$generation + NUM_GENERATIONS_mutSelBalance
+  
+  # read noises file
+  #noises <- read.table(file = paste0(resultsPath,"dirSelOpp_rep", repNum, ".noises"), header = FALSE)
+  noises <- read.table(file = paste0(resultsFolderForTimePlotsPath,"fluctSel_rep", repNum, ".noises"), header = FALSE)
+  colnames(noises) <- c("generation", meanGenotColnames)
+  noises$rep <- repNum
+  noises$generation <- noises$generation + NUM_GENERATIONS_mutSelBalance
+  
+  # read sbasals file
+  #sbasals <- read.table(file = paste0(resultsPath,"dirSelOpp_rep", repNum, ".sbasals"), header = FALSE)
+  sbasals <- read.table(file = paste0(resultsFolderForTimePlotsPath,"fluctSel_rep", repNum, ".sbasals"), header = FALSE)
+  colnames(sbasals) <- c("generation", meanGenotColnames)
+  sbasals$rep <- repNum
+  sbasals$generation <- sbasals$generation + NUM_GENERATIONS_mutSelBalance
+  
+  dirHist <- rbind(dirHist, hist)
+  dirNoises <- rbind(dirNoises, noises)
+  dirSbasals <- rbind(dirSbasals, sbasals)
+}
+```
+
+```{r read-summarized-results}
+allReplEvolResults <- read.table(file = paste0(resultsFolderForTimePlotsPath, "allReplEvolResults_fluctSel.txt"),
+#allReplEvolResults <- read.table(file = paste0(resultsPath, "allReplEvolResults_dirSelNeg.txt"),
+                                 sep = "\t", header = TRUE)
+#allReplEvolResultsSel <- allReplEvolResults[allReplEvolResults$scen == "sel", ]
+timeToAdapt <- as.numeric(as.character(allReplEvolResults$timeToAdapt[allReplEvolResults$gene == node_names[indexSelGene]]))
+generationAdaptationOccurs <- timeToAdapt + NUM_GENERATIONS_mutSelBalance
+```
+
+```{r plot-dir-sel}
+# peek
+plot_pop_fitness_dirSel <- 
+  ggplot(data = dirHist[!is.nan(dirHist$meanP_G1), ],
+         aes(x = generation, y = meanF, group = rep)) +
+  geom_line(color = fitnessColor, alpha = 0.8) +
+    theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=14, face="bold"),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold"),
+        strip.text.x = element_text(size=8, face="bold"),
+        strip.text.y = element_text(size=8, face="bold"),
+        legend.position = "top") +
+  ylab("Mean fitness") +
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 0.5) +
+  ylim(-0.1, 1)
+plot_pop_fitness_dirSel
+#ggsave(filename = "mutSelBalance-fluctScenEvol-continuation-fitness.png",
+#       plot = plot_pop_fitness_dirSel,
+#       path = plotsFolderWithPath_fluctSel,
+#       device = "png", scale = 2, width = 6, height = 5, units = "cm",
+#       dpi = 300, limitsize = TRUE,
+#       bg = "white")
+
+plot_phenotypes_dirSel <- ggplot(data = dirHist[ , c(1, indexSelGene + 1, dim(dirHist)[2])],
+                                  aes(x = generation, y = get(paste0("meanP_", node_names[indexSelGene])))) +
+  #annotate("rect", xmin = 0, xmax = NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS,
+  #         ymin = sOpt - S_MAX*adaptationResponseCriteria, 
+  #         ymax = sOpt + S_MAX*adaptationResponseCriteria,
+  #         alpha = 0.25, fill = "gray") +
+  geom_point(aes(group = rep), size = 0.1, alpha = 0.5, color = phenotypeColor) +
+  geom_line(aes(group = rep), size = 0.25, alpha = 0.5, color = phenotypeColor) +
+  stat_summary(fun = mean, geom = 'line', size = 1.5, color = phenotypeColor) +
+  geom_hline(yintercept = sOpt1, linetype = "dashed") +
+  geom_hline(yintercept = sOpt2, linetype = "dashed") +
+  annotate('text', x = 1500, y = sOpt1 - 3, label = 'Optimum 1') + 
+  annotate('text', x = 1500, y = sOpt2 + 3, label = 'Optimum 2') + 
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 1, linetype = "solid") +
+  #geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 1, linetype = "solid") +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=14, face="bold"),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold"),
+        strip.text.x = element_text(size=8, face="bold"),
+        strip.text.y = element_text(size=8, face="bold"),
+        legend.position = "top") +
+  #annotate('text', x = NUM_GENERATIONS_mutSelBalance/2, y = 15, label = "MS balance") + 
+  #annotate('text', x = (NUM_GENERATIONS_mutSelBalance + generationAdaptationOccurs)/2,
+  #         y = 15, label = "Adaptation") + 
+  #annotate('text', x = (generationAdaptationOccurs + NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS)/2,
+  #         y = 15, label = "Postadaptation") + 
+  geom_label(x = NUM_GENERATIONS_mutSelBalance/2, y = 15, label = "MSD balance", size = 3) +
+  geom_label(x = NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS/2,
+             y = 15, label = "Adaptation", size = 3) +
+  #geom_label(x = (generationAdaptationOccurs + NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS)/2,
+  #           y = 15, label = "Postadaptation") +
+  labs(y = "Expression level") + 
+  ylim(0, 100)
+#plot_phenotypes_dirSel
+#ggsave(filename = "plot_phenotypes_fluctSel.png",
+#       plot = plot_phenotypes_dirSel,
+#       path = plotsFolderWithPath_fluctSel,
+#       device = "png", scale = 2.5, width = 6, height = 5, units = "cm",
+#       dpi = 300, limitsize = TRUE,
+#       bg = "white")
+
+plot_selGene_vars_dirSel <- ggplot(data = dirHist[ , c(1, (indexSelGene + 1 + NUM_NODES), dim(dirHist)[2])], 
+                                     aes(x = generation, y = get(paste0("varP_", node_names[indexSelGene])))) +
+  geom_point(aes(group = rep), size = 0.1, alpha = 0.5, color = noiseColor) +
+  geom_line(aes(group = rep), size = 0.25, alpha = 0.5, color = noiseColor) +
+  stat_summary(data = dirHist[dirHist$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, (indexSelGene + 1 + NUM_NODES), dim(dirHist)[2])], 
+                                     aes(x = generation, y = get(paste0("varP_", node_names[indexSelGene]))),
+               fun = mean, geom = 'line', size = 1.5, color = noiseColor) +
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 1, linetype = "solid") +
+  #geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 1, linetype = "solid") +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=14, face="bold"),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold"),
+        strip.text.x = element_text(size=8, face="bold"),
+        strip.text.y = element_text(size=8, face="bold"),
+        legend.position = "top") +
+  #annotate('text', x = NUM_GENERATIONS_mutSelBalance/2, y = 15, label = "MutSel balance") + 
+  #annotate('text', x = (NUM_GENERATIONS_mutSelBalance + generationAdaptationOccurs)/2,
+  #         y = 15, label = "Adaptation") + 
+  #annotate('text', x = (generationAdaptationOccurs + NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS)/2,
+  #         y = 15, label = "Postadaptation") + 
+  #geom_label(x = NUM_GENERATIONS_mutSelBalance/2, y = 15, label = "MS balance") +
+  #geom_label(x = (NUM_GENERATIONS_mutSelBalance + generationAdaptationOccurs)/2,
+  #           y = 15, label = "Adaptation") +
+  #geom_label(x = (generationAdaptationOccurs + NUM_GENERATIONS_mutSelBalance + NUM_GENERATIONS)/2,
+  #           y = 15, label = "Postadaptation") +
+  geom_smooth(data = dirHist[dirHist$generation < NUM_GENERATIONS_mutSelBalance,
+                              c(1, (indexSelGene + 1 + NUM_NODES), dim(dirHist)[2])],
+              color = "black", linetype = "dotted") +
+  geom_smooth(data = dirHist[dirHist$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, (indexSelGene + 1 + NUM_NODES), dim(dirHist)[2])],
+              color = "black", linetype = "dotted") +
+  ylab("Expression variance")
+  #ylim(-1, 100)
+#plot_selGene_vars_dirSel
+#ggsave(filename = "plot_selGene_vars_fluctSel.png",
+#       plot = plot_selGene_vars_dirSel,
+#       path = plotsFolderWithPath_fluctSel,
+#       device = "png", scale = 2.5, width = 6, height = 5, units = "cm",
+#       dpi = 300, limitsize = TRUE,
+#       bg = "white")
+
+plot_selGene_noise_dirSel <- ggplot(data = dirNoises[ , c(1, indexSelGene + 1, dim(dirNoises)[2])], 
+                       aes(x = generation, y = get(paste0("meanG_", node_names[indexSelGene])))) +
+  geom_point(aes(group = rep), size = 0.1, alpha = 0.5, color = genotypeNoiseColor) +
+  geom_line(aes(group = rep), size = 0.25, alpha = 0.5, color = genotypeNoiseColor) +
+  stat_summary(data = dirNoises[dirNoises$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(dirNoises)[2])], 
+                                     aes(x = generation, y = get(paste0("meanG_", node_names[indexSelGene]))),
+               fun = mean, geom = 'line', size = 1.5, color = genotypeNoiseColor) +
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 1, linetype = "solid") +
+  #geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 1, linetype = "solid") +
+  geom_smooth(data = dirNoises[dirNoises$generation < NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(dirNoises)[2])],
+              color = "black", linetype = "dotted") +
+  geom_smooth(data = dirNoises[dirNoises$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(dirNoises)[2])],
+              color = "black", linetype = "dotted") +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=14, face="bold"),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold"),
+        strip.text.x = element_text(size=8, face="bold"),
+        strip.text.y = element_text(size=8, face="bold"),
+        legend.position = "top") +
+  #geom_smooth(color = "black", linetype = "dotted") +
+  ylab("Intrinsic noise")
+  #ylim(-1, 15)
+#plot_selGene_noise_dirSel
+#ggsave(filename = "plot_selGene_noise_fluctSel.png",
+#       plot = plot_selGene_noise_dirSel,
+#       path = plotsFolderWithPath_fluctSel,
+#       device = "png", scale = 2.5, width = 6, height = 5, units = "cm",
+#       dpi = 300, limitsize = TRUE,
+#       bg = "white")
+
+plot_selGene_sbasal_dirSel <- ggplot(data = dirSbasals[ , c(1, indexSelGene + 1, dim(dirSbasals)[2])], 
+                       aes(x = generation, y = get(paste0("meanG_", node_names[indexSelGene])))) +
+  geom_point(aes(group = rep), size = 0.1, alpha = 0.5, color = genotypeSBasalColor) +
+  geom_line(aes(group = rep), size = 0.25, alpha = 0.5, color = genotypeSBasalColor) +
+  stat_summary(data = dirSbasals[dirSbasals$generation > NUM_GENERATIONS_mutSelBalance,
+                                 c(1, indexSelGene + 1, dim(dirSbasals)[2])], 
+                                     aes(x = generation, y = get(paste0("meanG_", node_names[indexSelGene]))),
+               fun = mean, geom = 'line', size = 1.5, color = genotypeSBasalColor) +
+  geom_hline(yintercept = sOpt1, linetype = "dashed") +
+  geom_hline(yintercept = sOpt2, linetype = "dashed") +
+  annotate('text', x = 1500, y = sOpt1 - 3, label = 'Optimum 1') + 
+  annotate('text', x = 1500, y = sOpt2 + 3, label = 'Optimum 2') + 
+  geom_vline(xintercept = NUM_GENERATIONS_mutSelBalance, color = "black", alpha = 1, linetype = "solid") +
+  #geom_vline(xintercept = generationAdaptationOccurs, color = "black", alpha = 1, linetype = "solid") +
+  geom_smooth(data = dirSbasals[dirSbasals$generation < NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(dirSbasals)[2])],
+              color = "black", linetype = "dotted") +
+  geom_smooth(data = dirSbasals[dirSbasals$generation > NUM_GENERATIONS_mutSelBalance,
+                              c(1, indexSelGene + 1, dim(dirSbasals)[2])],
+              color = "black", linetype = "dotted") +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=14, face="bold"),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold"),
+        strip.text.x = element_text(size=8, face="bold"),
+        strip.text.y = element_text(size=8, face="bold"),
+        legend.position = "top") +
+  ylab("Basal expression level") +
+  ylim(-1, 100)
+#plot_selGene_sbasal_dirSel
+#ggsave(filename = "plot_selGene_sbasal_fluctSel.png",
+#       plot = plot_selGene_sbasal_dirSel,
+#       path = plotsFolderWithPath_fluctSel,
+#       device = "png", scale = 2.5, width = 6, height = 5, units = "cm",
+#       dpi = 300, limitsize = TRUE,
+#       bg = "white")
+```
+
+## Combine into joint plot
+
+```{r joint-plot}
+plot_joint_timeplots <- cowplot::plot_grid(plot_phenotypes_dirSel,
+                                 plot_selGene_vars_dirSel,
+                                 plot_selGene_noise_dirSel,
+                                 plot_selGene_sbasal_dirSel,
+                                 scale = c(0.95, 0.95, 0.95, 0.95),
+                                 labels = "AUTO",
+                                 label_size = 20,
+                                 label_fontface = "bold",
+                                 align = "v",
+                                 ncol = 1)
+ggsave(filename = paste0("plot_joint_timeplots.png"),
+       plot = plot_joint_timeplots, 
+       bg = "white",
+       path = plotsFolderWithPath_fluctSel, 
+       device = "png", 
+       scale = 1.5, height = 25, width = 8, units = "cm",
+       dpi = 300, limitsize = TRUE)
+```
+
+# Net evol: Fluctuating selection
+Read the genotype, phenotype and fitness information of evolved populations of 2000 random network topology samples.
+
+```{r read-data-dir-sel}
+#allNetsResults <- read.table(paste0(resultsPathAll, "allNetsResults_dirSelPos.txt"), sep = "\t", header = TRUE)
+allNetsResults <- read.table(paste0(resultsPathAll, "allNetsResults_prepped_fluctSel.txt"), sep = "\t", header = TRUE)
+#allNetsResults$adapted <- (allNetsResults$timeToAdapt != "Not_applied") &
+#                          (allNetsResults$timeToAdapt != "NC_adaptation") &
+#                          (allNetsResults$timeToAdapt != "Nonadaptive")
+allNetsResults$underFluctSel <- allNetsResults$sOptDelta != 0
+allNetsResults$regCategory <- factor(allNetsResults$regCategory, levels = c("masterTF", "interTF", "TG"))
+
+# there are 3 isolated (nonconnected) genes in network 4, it's a mistake from RGenNet. The network has 6 componenets (subnetworks).
+# I remove it because this network has subnetworks.
+allNetsResults <- allNetsResults[-which(allNetsResults$net == 4), ]
+
+#
+# subset networks in which the gene adapted
+#numbersOfNetsWithAdaptedGenes <- allNetsResults$net[allNetsResults$adapted == TRUE]
+#allNetsWithAdaptedGenes <- allNetsResults[allNetsResults$net %in% numbersOfNetsWithAdaptedGenes, ]
+#allNetsWithAdaptedGenes$timeToAdapt_dirSel <- as.numeric(as.character(allNetsWithAdaptedGenes$timeToAdapt_dirSel))
+
+#
+#netsWithInf <- allNetsWithAdaptedGenes$net[is.infinite(allNetsWithAdaptedGenes$aveNormChangeVar_PA)]
+#allNetsWithAdaptedGenes <- allNetsWithAdaptedGenes[!allNetsWithAdaptedGenes$net %in% netsWithInf, ]
+
+
+allNetsResults <- allNetsResults[allNetsResults$aveNormChangeVar_A < 1000, ]
+
+allNetsResults <- allNetsResults[-60158, ]
+
+# all genes under dir and stab sel
+genesUnderFluctSel <- allNetsResults[allNetsResults$underFluctSel == "TRUE", ]
+genesUnderStabSel <- allNetsResults[allNetsResults$underFluctSel == "FALSE", ]
+
+genesUnderFluctSel$adapted <- genesUnderFluctSel$selpress_eta_A > 1
+genesUnderStabSel$adapted <- genesUnderStabSel$selpress_eta_A > 1
+```
+
+## Adaptation (yes/no)
+
+### Adapted - regCategory - fluctSel
+
+```{r preview-adapted-genes-per-regcategory}
+contingencyTable <- table(genesUnderFluctSel[, c("regCategory", "adapted")])
+mosaicplot(contingencyTable, main = "Mosaic plot", color = TRUE)
+
+chisq.test(contingencyTable)
+#fisher.test(contingencyTable)
+prop.test(contingencyTable)
+
+percF <- contingencyTable[,1]/rowSums(contingencyTable)
+percT <- contingencyTable[,2]/rowSums(contingencyTable)
+perc <- cbind(rep(names(percF), 2), c(rep("FALSE", 3), rep("TRUE", 3)), c(percF, percT))
+colnames(perc) <- c("regCategory", "adapted", "percent")
+
+contingencyTable_melted <- melt(contingencyTable)
+contingencyTable_melted <- merge(contingencyTable_melted, perc, by = c("regCategory", "adapted"))
+contingencyTable_melted$percent <- as.numeric(as.character(contingencyTable_melted$percent))
+
+# percentage labels
+contingencyTable_melted$percentPosition <- contingencyTable_melted$value 
+contingencyTable_melted$percentPosition[contingencyTable_melted$adapted == "TRUE"] <-
+  contingencyTable_melted$percentPosition[contingencyTable_melted$adapted == "TRUE"]/2
+contingencyTable_melted$percentPosition[contingencyTable_melted$adapted == "FALSE"] <-
+  ((contingencyTable_melted$value[contingencyTable_melted$adapted == "FALSE"]/2) + 
+  contingencyTable_melted$value[contingencyTable_melted$adapted == "TRUE"])
+contingencyTable_melted$percentPosition[contingencyTable_melted$regCategory == "TG" & contingencyTable_melted$adapted == "FALSE"] <- 
+  contingencyTable_melted$percentPosition[contingencyTable_melted$regCategory == "TG" & contingencyTable_melted$adapted == "FALSE"] + 75
+
+plot_bars_fluctSel <- ggplot(contingencyTable_melted, aes(x = regCategory, y = value, fill = adapted)) + 
+  geom_bar(position = "stack", stat = "identity", colour = "black", size = 1) +
+  geom_text(aes(x = regCategory, y = percentPosition, label = paste0(round(percent*100, digits = 2),"%")), size = 2) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=14, face="bold"),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold"),
+        legend.position = "top") +
+  scale_fill_brewer(palette = "Pastel1", name = "Adapted", labels = c("FALSE" = "No", "TRUE" = "Yes")) +
+  labs(x = "Regulatory gene category", y = "Number of genes")
+plot_bars_fluctSel
+ggsave(filename = sprintf("plot_bars_fluctSelPos.png"),
+       path = plotsFolderWithPath_fluctSel,
+       plot = plot_bars_fluctSel, 
+       device = "png", scale = 2, width = 6, height = 8, units = "cm",
+       dpi = 300, limitsize = TRUE)
+```
+
+```{r logisticReg-adapted-regcategory}
+logRegModel <- glm(adapted ~ regCategory, 
+                   data = genesUnderFluctSel,
+                   family = binomial)
+summary(logRegModel)
+```
+
+### Adapted - regCategory - stabSel
+
+```{r preview-adapted-genes-per-regcategory}
+contingencyTable <- table(genesUnderStabSel[, c("regCategory", "adapted")])
+mosaicplot(contingencyTable, main = "Mosaic plot", color = TRUE)
+
+chisq.test(contingencyTable)
+#fisher.test(contingencyTable)
+prop.test(contingencyTable)
+
+percF <- contingencyTable[,1]/rowSums(contingencyTable)
+percT <- contingencyTable[,2]/rowSums(contingencyTable)
+perc <- cbind(rep(names(percF), 2), c(rep("FALSE", 3), rep("TRUE", 3)), c(percF, percT))
+colnames(perc) <- c("regCategory", "adapted", "percent")
+
+contingencyTable_melted <- melt(contingencyTable)
+contingencyTable_melted <- merge(contingencyTable_melted, perc, by = c("regCategory", "adapted"))
+contingencyTable_melted$percent <- as.numeric(as.character(contingencyTable_melted$percent))
+
+# percentage labels
+contingencyTable_melted$percentPosition <- contingencyTable_melted$value 
+contingencyTable_melted$percentPosition[contingencyTable_melted$adapted == "TRUE"] <-
+  contingencyTable_melted$percentPosition[contingencyTable_melted$adapted == "TRUE"]/2
+contingencyTable_melted$percentPosition[contingencyTable_melted$adapted == "FALSE"] <-
+  ((contingencyTable_melted$value[contingencyTable_melted$adapted == "FALSE"]/2) + 
+  contingencyTable_melted$value[contingencyTable_melted$adapted == "TRUE"])
+contingencyTable_melted$percentPosition[contingencyTable_melted$regCategory == "TG" & contingencyTable_melted$adapted == "FALSE"] <- 
+  contingencyTable_melted$percentPosition[contingencyTable_melted$regCategory == "TG" & contingencyTable_melted$adapted == "FALSE"] + 75
+
+plot_bars_stabSel <- ggplot(contingencyTable_melted, aes(x = regCategory, y = value, fill = adapted)) + 
+  geom_bar(position = "stack", stat = "identity", colour = "black", size = 1) +
+  geom_text(aes(x = regCategory, y = percentPosition, label = paste0(round(percent*100, digits = 2),"%")), size = 2) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=14, face="bold"),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold"),
+        legend.position = "top") +
+  scale_fill_brewer(palette = "Pastel1", name = "Adapted", labels = c("FALSE" = "No", "TRUE" = "Yes")) +
+  labs(x = "Regulatory gene category", y = "Number of genes")
+plot_bars_stabSel
+ggsave(filename = sprintf("plot_bars_stabSel.png"),
+       path = plotsFolderWithPath_fluctSel,
+       plot = plot_bars_stabSel, 
+       device = "png", scale = 2, width = 6, height = 8, units = "cm",
+       dpi = 300, limitsize = TRUE)
+```
+
+### Adapted - netmetrics
+
+```{r logisticReg-adapted-netmetrics}
+print("All three categories")
+logRegModel <- glm(adapted ~ absInStr + absOutStr, 
+                   data = genesUnderFluctSel,
+                   family = binomial)
+summary(logRegModel)
+print("only masterTF")
+logRegModel <- glm(adapted ~ absOutStr, 
+                   data = genesUnderFluctSel[genesUnderFluctSel$regCategory == "masterTF", ],
+                   family = binomial)
+summary(logRegModel)
+print("only interTF")
+logRegModel <- glm(adapted ~ absInStr + absOutStr, 
+                   data = genesUnderFluctSel[genesUnderFluctSel$regCategory == "interTF", ],
+                   family = binomial)
+summary(logRegModel)
+print("only TG")
+logRegModel <- glm(adapted ~ absInStr, 
+                   data = genesUnderFluctSel[genesUnderFluctSel$regCategory == "TG", ],
+                   family = binomial)
+summary(logRegModel)
+```
+
+
+## Selective pressure (intensity of response)
+
+### Sel. pressure - regCategory
+
+```{r linearReg-timeToAdapt-regcategory}
+lmModel <- glm(selpress_eta_A ~ regCategory, 
+                   data = genesUnderFluctSel)
+summary(lmModel)
+```
+
+### Selective pressure - netmetrics
+
+```{r timeToAdapt-netmetrics}
+print("All three categories")
+lmModel <- glm(selpress_eta_A ~ absInStr + absOutStr, 
+                   data = genesUnderFluctSel)
+summary(lmModel)
+print("only masterTF")
+lmModel <- glm(selpress_eta_A ~ absOutStr, 
+                   data = genesUnderFluctSel[genesUnderFluctSel$regCategory == "masterTF", ])
+summary(lmModel)
+print("only interTF")
+lmModel <- glm(selpress_eta_A ~ absInStr + absOutStr, 
+                   data = genesUnderFluctSel[genesUnderFluctSel$regCategory == "interTF", ])
+summary(lmModel)
+print("only TG")
+lmModel <- glm(selpress_eta_A ~ absInStr, 
+                   data = genesUnderFluctSel[genesUnderFluctSel$regCategory == "TG", ])
+summary(lmModel)
+
+p <- ggplot(genesUnderFluctSel, aes(x = regCategory, y = selpress_eta_A)) + 
+  geom_boxplot()
+p
+
+p <- ggplot(genesUnderStabSel, aes(x = regCategory, y = selpress_eta_A)) + 
+  geom_boxplot()
+p
+```
+
+
+
+## Changes of phen. noise and genotypes
+
+### Overview, histograms
+
+```{r selpress-during-adaptation-dirselected}
+plot_hist_normChangeVar <- ggplot(allNetsResults, aes(x = aveNormChangeVar_A)) +
+    geom_histogram(data = subset(allNetsResults, underFluctSel == "TRUE"), fill = noiseColor, alpha = 0.9, binwidth = 0.5) +
+    geom_histogram(data = subset(allNetsResults, underFluctSel == "FALSE"), fill = "gray", alpha = 0.9, binwidth = 0.5) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold")) +
+  labs(x = expression("Change of noise during adaptation"), y = "count (log10)") +
+  xlim(-1, 100) + scale_y_log10()
+  #scale_x_continuous(limits = c(-0.1, 1.1), n.breaks = 4)
+plot_hist_normChangeVar
+
+plot_hist_selPress_eta <- ggplot(genesUnderFluctSel, aes(x = selpress_eta_A)) +
+    geom_histogram(data = subset(allNetsResults, underFluctSel == "TRUE"), fill = genotypeNoiseColor, alpha = 0.5, binwidth = 0.5) +
+    geom_histogram(data = subset(allNetsResults, underFluctSel == "FALSE"), fill = "gray", alpha = 0.5, binwidth = 0.5) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold")) +
+  labs(x = expression("Selective pressure noise during adaptation"), y = "count (log10)") +
+  xlim(-1, 100) + scale_y_log10()
+  #ylim(0, 20000) +
+  #scale_x_continuous(limits = c(-0.1, 1.1), n.breaks = 4)
+plot_hist_selPress_eta
+
+plot_hist_selPress_sbasal <- ggplot(allNetsResults, aes(x = selpress_sbasal_A)) +
+    geom_histogram(data = subset(allNetsResults, underFluctSel == "TRUE"), fill = genotypeSBasalColor, alpha = 0.9, binwidth = 0.5) +
+    geom_histogram(data = subset(allNetsResults, underFluctSel == "FALSE"), fill = "gray", alpha = 0.9, binwidth = 0.5) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold")) +
+  labs(x = expression("Selective pressure sbasal during adaptation"), y = "count") #+
+  #ylim(0, 20000) +
+  #scale_x_continuous(limits = c(-0.1, 1.1), n.breaks = 4)
+plot_hist_selPress_sbasal
+```
+
+```{r selpress-during-adaptation-stabselected}
+plot_hist_normChangeVar <- ggplot(genesUnderStabSel, aes(x = aveNormChangeVar_A)) +
+  geom_histogram(fill = noiseColor, color = "black", binwidth = 0.1) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold")) +
+  labs(x = expression("Change of noise during adaptation"), y = "count") #+
+  #ylim(0, 20000) +
+  #scale_x_continuous(limits = c(-0.1, 1.1), n.breaks = 4)
+plot_hist_normChangeVar
+
+plot_hist_selPress_eta <- ggplot(genesUnderStabSel, aes(x = selpress_eta_A)) +
+  geom_histogram(fill = genotypeNoiseColor, color = "black", binwidth = 0.1) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold")) +
+  labs(x = expression("Selective pressure noise during adaptation"), y = "count") #+
+  #ylim(0, 20000) +
+  #scale_x_continuous(limits = c(-0.1, 1.1), n.breaks = 4)
+plot_hist_selPress_eta
+
+plot_hist_selPress_sbasal <- ggplot(genesUnderStabSel, aes(x = selpress_sbasal_A)) +
+  geom_histogram(fill = genotypeSBasalColor, color = "black", binwidth = 0.025) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold")) +
+  labs(x = expression("Selective pressure sbasal during adaptation"), y = "count") #+
+  #ylim(0, 20000) +
+  #scale_x_continuous(limits = c(-0.1, 1.1), n.breaks = 4)
+plot_hist_selPress_sbasal
+```
+
+## Comparison of A and PA phases
+
+```{r wilcox-tests-phenotnoise}
+wilcox.test(genesUnderFluctSel$aveNormChangeVar_A, genesUnderStabSel$aveNormChangeVar_A, alternative = "greater")
+wilcox.test(genesUnderFluctSel$selpress_eta_A, genesUnderStabSel$selpress_eta_A, alternative = "greater")
+wilcox.test(genesUnderFluctSel$selpress_sbasal_A, genesUnderStabSel$selpress_sbasal_A, alternative = "greater")
+
+
+# comparisons between the reg categories
+wilcox.test(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "TG"], 
+            genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "interTF"],
+            alternative = "greater")
+wilcox.test(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "TG"], 
+            genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "masterTF"],
+            alternative = "greater")
+
+wilcox.test(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "TG"], 
+            genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "interTF"],
+            alternative = "greater")
+wilcox.test(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "TG"], 
+            genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "masterTF"],
+            alternative = "greater")
+```
+
+### Stats - aveNormVar
+
+```{r wilcox-tests-phenotnoise}
+wilcoxTests_phenotNoise <- data.frame(regCategory = factor(c("masterTF", "masterTF",  
+                                      "interTF", "interTF", 
+                                      "TG", "TG"), 
+                                    levels = c("masterTF", "interTF", "TG")),
+                       Selection = factor(c("Fluctuating", "Stabilizing", "Fluctuating", "Stabilizing",
+                                           "Fluctuating", "Stabilizing"),
+                                    levels = c("Fluctuating", "Stabilizing")),
+                       numGenes = NA, aveNormChangeVar = NA, pval = NA, pval.corrected = NA, lab = NA)
+
+### change of variance after selection is applied
+
+## masterTF
+# masterTF, Fluctuating
+rowIndex <- wilcoxTests_phenotNoise$regCategory == "masterTF" & wilcoxTests_phenotNoise$Selection == "Fluctuating"
+wilcoxTests_phenotNoise[rowIndex, "numGenes"] <-
+  length(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "masterTF"])
+wilcoxTest <- wilcox.test(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "masterTF"], 
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_phenotNoise[rowIndex, "aveNormChangeVar"] <-
+  median(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "masterTF"])
+wilcoxTests_phenotNoise[rowIndex, "pval"] <- wilcoxTest$p.value
+# masterTF,  Stabilizing
+rowIndex <- wilcoxTests_phenotNoise$regCategory == "masterTF" & wilcoxTests_phenotNoise$Selection == "Stabilizing"
+wilcoxTests_phenotNoise[rowIndex, "numGenes"] <-
+  length(genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "masterTF"])
+wilcoxTest <- wilcox.test(genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "masterTF"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_phenotNoise[rowIndex, "aveNormChangeVar"] <-
+  median(genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "masterTF"])
+wilcoxTests_phenotNoise[rowIndex, "pval"] <- wilcoxTest$p.value
+
+## interTF
+# interTF, Fluctuating
+rowIndex <- wilcoxTests_phenotNoise$regCategory == "interTF" & wilcoxTests_phenotNoise$Selection == "Fluctuating"
+wilcoxTests_phenotNoise[rowIndex, "numGenes"] <-
+  length(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "interTF"])
+wilcoxTest <- wilcox.test(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "interTF"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_phenotNoise[rowIndex, "aveNormChangeVar"] <-
+  median(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "interTF"])
+wilcoxTests_phenotNoise[rowIndex, "pval"] <- wilcoxTest$p.value
+# interTF, Stabilizing
+rowIndex <- wilcoxTests_phenotNoise$regCategory == "interTF" & wilcoxTests_phenotNoise$Selection == "Stabilizing"
+wilcoxTests_phenotNoise[rowIndex, "numGenes"] <-
+  length(genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "interTF"])
+wilcoxTest <- wilcox.test(genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "interTF"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_phenotNoise[rowIndex, "aveNormChangeVar"] <-
+  median(genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "interTF"])
+wilcoxTests_phenotNoise[rowIndex, "pval"] <- wilcoxTest$p.value
+
+## TG
+# TG, Fluctuating
+rowIndex <- wilcoxTests_phenotNoise$regCategory == "TG" & wilcoxTests_phenotNoise$Selection == "Fluctuating"
+wilcoxTests_phenotNoise[rowIndex, "numGenes"] <-
+  length(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "TG"])
+wilcoxTest <- wilcox.test(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "TG"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_phenotNoise[rowIndex, "aveNormChangeVar"] <-
+  median(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "TG"])
+wilcoxTests_phenotNoise[rowIndex, "pval"] <- wilcoxTest$p.value
+# TG, Stabilizing
+rowIndex <- wilcoxTests_phenotNoise$regCategory == "TG" & wilcoxTests_phenotNoise$Selection == "Stabilizing"
+wilcoxTests_phenotNoise[rowIndex, "numGenes"] <-
+  length(genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "TG"])
+wilcoxTest <- wilcox.test(genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "TG"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_phenotNoise[rowIndex, "aveNormChangeVar"] <-
+  median(genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "TG"])
+wilcoxTests_phenotNoise[rowIndex, "pval"] <- wilcoxTest$p.value
+
+# Bonferroni correction
+wilcoxTests_phenotNoise$pval.corrected <- wilcoxTests_phenotNoise$pval*dim(wilcoxTests_phenotNoise)[1]
+wilcoxTests_phenotNoise$signif <- wilcoxTests_phenotNoise$pval.corrected < 0.05
+wilcoxTests_phenotNoise$lab <- "ns"
+wilcoxTests_phenotNoise$lab[wilcoxTests_phenotNoise$pval.corrected <= 0.05] <- "*"
+wilcoxTests_phenotNoise$lab[wilcoxTests_phenotNoise$pval.corrected < 0.01] <- "**"
+wilcoxTests_phenotNoise$lab[wilcoxTests_phenotNoise$pval.corrected < 0.001] <- "***"
+wilcoxTests_phenotNoise$lab[wilcoxTests_phenotNoise$pval.corrected < 0.0001] <- "****"
+wilcoxTests_phenotNoise$value <- 2.2
+
+wilcoxTests_phenotNoise
+```
+
+### Stats - genotNoise
+
+```{r wilcox-tests-genotnoise}
+wilcoxTests_genotEta <- data.frame(regCategory = factor(c("masterTF", "masterTF",  
+                                      "interTF", "interTF", 
+                                      "TG", "TG"), 
+                                    levels = c("masterTF", "interTF", "TG")),
+                       Selection = factor(c("Fluctuating", "Stabilizing", "Fluctuating", "Stabilizing",
+                                           "Fluctuating", "Stabilizing"),
+                                    levels = c("Fluctuating", "Stabilizing")),
+                       numGenes = NA, averageGenotEta = NA, pval = NA, pval.corrected = NA, lab = NA)
+
+### change of variance after selection is applied
+
+## masterTF
+# masterTF, Fluctuating
+rowIndex <- wilcoxTests_genotEta$regCategory == "masterTF" & wilcoxTests_genotEta$Selection == "Fluctuating"
+wilcoxTests_genotEta[rowIndex, "numGenes"] <-
+  length(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "masterTF"])
+wilcoxTest <- wilcox.test(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "masterTF"], 
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_genotEta[rowIndex, "averageGenotEta"] <-
+  median(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "masterTF"])
+wilcoxTests_genotEta[rowIndex, "pval"] <- wilcoxTest$p.value
+# masterTF,  Stabilizing
+rowIndex <- wilcoxTests_genotEta$regCategory == "masterTF" & wilcoxTests_genotEta$Selection == "Stabilizing"
+wilcoxTests_genotEta[rowIndex, "numGenes"] <-
+  length(genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "masterTF"])
+wilcoxTest <- wilcox.test(genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "masterTF"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_genotEta[rowIndex, "averageGenotEta"] <-
+  median(genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "masterTF"])
+wilcoxTests_genotEta[rowIndex, "pval"] <- wilcoxTest$p.value
+
+## interTF
+# interTF, Fluctuating
+rowIndex <- wilcoxTests_genotEta$regCategory == "interTF" & wilcoxTests_genotEta$Selection == "Fluctuating"
+wilcoxTests_genotEta[rowIndex, "numGenes"] <-
+  length(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "interTF"])
+wilcoxTest <- wilcox.test(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "interTF"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_genotEta[rowIndex, "averageGenotEta"] <-
+  median(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "interTF"])
+wilcoxTests_genotEta[rowIndex, "pval"] <- wilcoxTest$p.value
+# interTF, Stabilizing
+rowIndex <- wilcoxTests_genotEta$regCategory == "interTF" & wilcoxTests_genotEta$Selection == "Stabilizing"
+wilcoxTests_genotEta[rowIndex, "numGenes"] <-
+  length(genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "interTF"])
+wilcoxTest <- wilcox.test(genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "interTF"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_genotEta[rowIndex, "averageGenotEta"] <-
+  median(genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "interTF"])
+wilcoxTests_genotEta[rowIndex, "pval"] <- wilcoxTest$p.value
+
+## TG
+# TG, Fluctuating
+rowIndex <- wilcoxTests_genotEta$regCategory == "TG" & wilcoxTests_genotEta$Selection == "Fluctuating"
+wilcoxTests_genotEta[rowIndex, "numGenes"] <-
+  length(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "TG"])
+wilcoxTest <- wilcox.test(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "TG"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_genotEta[rowIndex, "averageGenotEta"] <-
+  median(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "TG"])
+wilcoxTests_genotEta[rowIndex, "pval"] <- wilcoxTest$p.value
+# TG, Stabilizing
+rowIndex <- wilcoxTests_genotEta$regCategory == "TG" & wilcoxTests_genotEta$Selection == "Stabilizing"
+wilcoxTests_genotEta[rowIndex, "numGenes"] <-
+  length(genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "TG"])
+wilcoxTest <- wilcox.test(genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "TG"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_genotEta[rowIndex, "averageGenotEta"] <-
+  median(genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "TG"])
+wilcoxTests_genotEta[rowIndex, "pval"] <- wilcoxTest$p.value
+
+# Bonferroni correction
+wilcoxTests_genotEta$pval.corrected <- wilcoxTests_genotEta$pval*dim(wilcoxTests_genotEta)[1]
+wilcoxTests_genotEta$signif <- wilcoxTests_genotEta$pval.corrected < 0.05
+wilcoxTests_genotEta$lab <- "ns"
+wilcoxTests_genotEta$lab[wilcoxTests_genotEta$pval.corrected <= 0.05] <- "*"
+wilcoxTests_genotEta$lab[wilcoxTests_genotEta$pval.corrected < 0.01] <- "**"
+wilcoxTests_genotEta$lab[wilcoxTests_genotEta$pval.corrected < 0.001] <- "***"
+wilcoxTests_genotEta$lab[wilcoxTests_genotEta$pval.corrected < 0.0001] <- "****"
+wilcoxTests_genotEta$value <- -5
+
+wilcoxTests_genotEta
+```
+
+### Stats - genotSBasal
+
+```{r wilcox-tests-genotSbasal}
+wilcoxTests_genotSBasal <- data.frame(regCategory = factor(c("masterTF", "masterTF",  
+                                      "interTF", "interTF", 
+                                      "TG", "TG"), 
+                                    levels = c("masterTF", "interTF", "TG")),
+                       Selection = factor(c("Fluctuating", "Stabilizing", "Fluctuating", "Stabilizing",
+                                           "Fluctuating", "Stabilizing"),
+                                    levels = c("Fluctuating", "Stabilizing")),
+                       numGenes = NA, averageSBasal = NA, pval = NA, pval.corrected = NA, lab = NA)
+
+### change of variance after selection is applied
+
+## masterTF
+# masterTF, Fluctuating
+rowIndex <- wilcoxTests_genotSBasal$regCategory == "masterTF" & wilcoxTests_genotSBasal$Selection == "Fluctuating"
+wilcoxTests_genotSBasal[rowIndex, "numGenes"] <-
+  length(genesUnderFluctSel$selpress_sbasal_A[genesUnderFluctSel$regCategory == "masterTF"])
+wilcoxTest <- wilcox.test(genesUnderFluctSel$selpress_sbasal_A[genesUnderFluctSel$regCategory == "masterTF"], 
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_genotSBasal[rowIndex, "averageSBasal"] <-
+  median(genesUnderFluctSel$selpress_sbasal_A[genesUnderFluctSel$regCategory == "masterTF"])
+wilcoxTests_genotSBasal[rowIndex, "pval"] <- wilcoxTest$p.value
+# masterTF,  Stabilizing
+rowIndex <- wilcoxTests_genotSBasal$regCategory == "masterTF" & wilcoxTests_genotSBasal$Selection == "Stabilizing"
+wilcoxTests_genotSBasal[rowIndex, "numGenes"] <-
+  length(genesUnderStabSel$selpress_sbasal_A[genesUnderStabSel$regCategory == "masterTF"])
+wilcoxTest <- wilcox.test(genesUnderStabSel$selpress_sbasal_A[genesUnderStabSel$regCategory == "masterTF"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_genotSBasal[rowIndex, "averageSBasal"] <-
+  median(genesUnderStabSel$selpress_sbasal_A[genesUnderStabSel$regCategory == "masterTF"])
+wilcoxTests_genotSBasal[rowIndex, "pval"] <- wilcoxTest$p.value
+
+## interTF
+# interTF, Fluctuating
+rowIndex <- wilcoxTests_genotSBasal$regCategory == "interTF" & wilcoxTests_genotSBasal$Selection == "Fluctuating"
+wilcoxTests_genotSBasal[rowIndex, "numGenes"] <-
+  length(genesUnderFluctSel$selpress_sbasal_A[genesUnderFluctSel$regCategory == "interTF"])
+wilcoxTest <- wilcox.test(genesUnderFluctSel$selpress_sbasal_A[genesUnderFluctSel$regCategory == "interTF"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_genotSBasal[rowIndex, "averageSBasal"] <-
+  median(genesUnderFluctSel$selpress_sbasal_A[genesUnderFluctSel$regCategory == "interTF"])
+wilcoxTests_genotSBasal[rowIndex, "pval"] <- wilcoxTest$p.value
+# interTF, Stabilizing
+rowIndex <- wilcoxTests_genotSBasal$regCategory == "interTF" & wilcoxTests_genotSBasal$Selection == "Stabilizing"
+wilcoxTests_genotSBasal[rowIndex, "numGenes"] <-
+  length(genesUnderStabSel$selpress_sbasal_A[genesUnderStabSel$regCategory == "interTF"])
+wilcoxTest <- wilcox.test(genesUnderStabSel$selpress_sbasal_A[genesUnderStabSel$regCategory == "interTF"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_genotSBasal[rowIndex, "averageSBasal"] <-
+  median(genesUnderStabSel$selpress_sbasal_A[genesUnderStabSel$regCategory == "interTF"])
+wilcoxTests_genotSBasal[rowIndex, "pval"] <- wilcoxTest$p.value
+
+## TG
+# TG, Fluctuating
+rowIndex <- wilcoxTests_genotSBasal$regCategory == "TG" & wilcoxTests_genotSBasal$Selection == "Fluctuating"
+wilcoxTests_genotSBasal[rowIndex, "numGenes"] <-
+  length(genesUnderFluctSel$selpress_sbasal_A[genesUnderFluctSel$regCategory == "TG"])
+wilcoxTest <- wilcox.test(genesUnderFluctSel$selpress_sbasal_A[genesUnderFluctSel$regCategory == "TG"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_genotSBasal[rowIndex, "averageSBasal"] <-
+  median(genesUnderFluctSel$selpress_sbasal_A[genesUnderFluctSel$regCategory == "TG"])
+wilcoxTests_genotSBasal[rowIndex, "pval"] <- wilcoxTest$p.value
+# TG, Stabilizing
+rowIndex <- wilcoxTests_genotSBasal$regCategory == "TG" & wilcoxTests_genotSBasal$Selection == "Stabilizing"
+wilcoxTests_genotSBasal[rowIndex, "numGenes"] <-
+  length(genesUnderStabSel$selpress_sbasal_A[genesUnderStabSel$regCategory == "TG"])
+wilcoxTest <- wilcox.test(genesUnderStabSel$selpress_sbasal_A[genesUnderStabSel$regCategory == "TG"],
+                          mu = 0, alternative = "two.sided")
+wilcoxTests_genotSBasal[rowIndex, "averageSBasal"] <-
+  median(genesUnderStabSel$selpress_sbasal_A[genesUnderStabSel$regCategory == "TG"])
+wilcoxTests_genotSBasal[rowIndex, "pval"] <- wilcoxTest$p.value
+
+# Bonferroni correction
+wilcoxTests_genotSBasal$pval.corrected <- wilcoxTests_genotSBasal$pval*dim(wilcoxTests_genotSBasal)[1]
+wilcoxTests_genotSBasal$signif <- wilcoxTests_genotSBasal$pval.corrected < 0.05
+wilcoxTests_genotSBasal$lab <- "ns"
+wilcoxTests_genotSBasal$lab[wilcoxTests_genotSBasal$pval.corrected <= 0.05] <- "*"
+wilcoxTests_genotSBasal$lab[wilcoxTests_genotSBasal$pval.corrected < 0.01] <- "**"
+wilcoxTests_genotSBasal$lab[wilcoxTests_genotSBasal$pval.corrected < 0.001] <- "***"
+wilcoxTests_genotSBasal$lab[wilcoxTests_genotSBasal$pval.corrected < 0.0001] <- "****"
+wilcoxTests_genotSBasal$value <- -0.3
+
+wilcoxTests_genotSBasal
+```
+
+### Plots
+
+```{r comparisons-of-three-variables}
+
+#### expression variance
+varChangesDiffPhases <- allNetsResults[, c("aveNormChangeVar_A", "regCategory", "underFluctSel")]
+varChangesDiffPhases$underFluctSel[varChangesDiffPhases$underFluctSel == "TRUE"] <- 'Fluctuating'
+varChangesDiffPhases$underFluctSel[varChangesDiffPhases$underFluctSel == "FALSE"] <- 'Stabilizing'
+colnames(varChangesDiffPhases)[which(colnames(varChangesDiffPhases) == "underFluctSel")] <- "Selection"
+varChangesDiffPhases$Selection <- factor(varChangesDiffPhases$Selection, levels = c("Fluctuating", "Stabilizing"))
+
+stat.test <- varChangesDiffPhases %>%
+  group_by(regCategory) %>%
+  wilcox_test(aveNormChangeVar_A ~ Selection) %>%
+  adjust_pvalue(method = "bonferroni") %>%
+  add_significance()
+stat.test <- stat.test %>% add_x_position(x = "regCategory", dodge = 0.6)
+
+plot_varChangesDiffPhases <- ggplot(varChangesDiffPhases, 
+                                    aes(x = regCategory, y = aveNormChangeVar_A)) + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_point(aes(fill = Selection, col = Selection),
+             position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.6), size = 0.5, alpha = 0.2) + 
+  geom_boxplot(aes(fill = Selection, col = Selection),
+               position = position_dodge(width = 0.6), outlier.shape = NA, alpha = 0.75, width = 0.25, colour = "black") +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", y.position = 18, step.increase = 0, tip.length = 0.001) +
+  geom_label(data = wilcoxTests_phenotNoise, aes(x = regCategory, y = -3, 
+                                             label = as.character(round(aveNormChangeVar, digits = 2)),
+                                             colour = Selection), 
+            position = position_dodge(width = 0.6), size = 4, fontface = "bold", 
+            inherit.aes = FALSE, show.legend = FALSE) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=14, face="bold"),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold"),
+        strip.text.x = element_text(size=8, face="bold"),
+        strip.text.y = element_text(size=8, face="bold"),
+        legend.position = "top") +
+  scale_fill_manual(values = c("Fluctuating" = noiseColor, "Stabilizing" = "darkgray")) + 
+  scale_color_manual(values = c("Fluctuating" = noiseColor, "Stabilizing" = "darkgray")) +  
+  ylim(-5, 20) +
+  labs(x = "Regulatory gene category", y = expression(bold("Mean"~Delta~"expression variance")))
+plot_varChangesDiffPhases
+
+#### genotEta
+selPressEtaDiffPhases <- allNetsResults[, c("selpress_eta_A", "regCategory", "underFluctSel")]
+selPressEtaDiffPhases$underFluctSel[selPressEtaDiffPhases$underFluctSel == "TRUE"] <- 'Fluctuating'
+selPressEtaDiffPhases$underFluctSel[selPressEtaDiffPhases$underFluctSel == "FALSE"] <- 'Stabilizing'
+colnames(selPressEtaDiffPhases)[which(colnames(selPressEtaDiffPhases) == "underFluctSel")] <- "Selection"
+selPressEtaDiffPhases$Selection <- factor(selPressEtaDiffPhases$Selection, levels = c("Fluctuating", "Stabilizing"))
+
+stat.test <- selPressEtaDiffPhases %>%
+  group_by(regCategory) %>%
+  wilcox_test(selpress_eta_A ~ Selection) %>%
+  adjust_pvalue(method = "bonferroni") %>%
+  add_significance()
+stat.test <- stat.test %>% add_x_position(x = "regCategory", dodge = 0.6)
+
+plot_selPressEtaDiffPhases <- ggplot(selPressEtaDiffPhases, 
+                                    aes(x = regCategory, y = selpress_eta_A)) + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_point(aes(fill = Selection, col = Selection),
+             position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.6), size = 0.5, alpha = 0.2) + 
+  geom_boxplot(aes(fill = Selection, col = Selection),
+               position = position_dodge(width = 0.6), outlier.shape = NA, alpha = 0.75, width = 0.25, colour = "black") +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", y.position = 100, step.increase = 0, tip.length = 0.03) +
+  geom_label(data = wilcoxTests_genotEta, aes(x = regCategory, y = -15, 
+                                             label = as.character(round(averageGenotEta, digits = 2)),
+                                             colour = Selection), 
+            position = position_dodge(width = 0.6), size = 4, fontface = "bold", 
+            inherit.aes = FALSE, show.legend = FALSE) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=14, face="bold"),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold"),
+        strip.text.x = element_text(size=8, face="bold"),
+        strip.text.y = element_text(size=8, face="bold"),
+        legend.position = "top") +
+  scale_fill_manual(values = c("Fluctuating" = genotypeNoiseColor, "Stabilizing" = "darkgray")) + 
+  scale_color_manual(values = c("Fluctuating" = genotypeNoiseColor, "Stabilizing" = "darkgray")) + 
+  ylim(-50, 120) +
+  labs(x = "Regulatory gene category", y = expression(bold("Mean"~Delta~"intrinsic noise")))
+plot_selPressEtaDiffPhases
+
+#### genotSBasal
+selPressSBasalDiffPhases <- allNetsResults[, c("selpress_sbasal_A", "regCategory", "underFluctSel")]
+selPressSBasalDiffPhases$underFluctSel[selPressSBasalDiffPhases$underFluctSel == "TRUE"] <- 'Fluctuating'
+selPressSBasalDiffPhases$underFluctSel[selPressSBasalDiffPhases$underFluctSel == "FALSE"] <- 'Stabilizing'
+colnames(selPressSBasalDiffPhases)[which(colnames(selPressSBasalDiffPhases) == "underFluctSel")] <- "Selection"
+selPressSBasalDiffPhases$Selection <- factor(selPressSBasalDiffPhases$Selection, levels = c("Fluctuating", "Stabilizing"))
+
+stat.test <- selPressSBasalDiffPhases %>%
+  group_by(regCategory) %>%
+  wilcox_test(selpress_sbasal_A ~ Selection) %>%
+  adjust_pvalue(method = "bonferroni") %>%
+  add_significance()
+stat.test <- stat.test %>% add_x_position(x = "regCategory", dodge = 0.6)
+
+plot_selPressSBasalDiffPhases <- ggplot(selPressSBasalDiffPhases, 
+                                    aes(x = regCategory, y = selpress_sbasal_A)) + 
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  geom_point(aes(fill = Selection, col = Selection),
+             position = position_jitterdodge(jitter.width = 0.2, dodge.width = 0.6), size = 0.5, alpha = 0.2) + 
+  geom_boxplot(aes(fill = Selection, col = Selection),
+               position = position_dodge(width = 0.6), outlier.shape = NA, alpha = 0.75, width = 0.25, colour = "black") +
+  stat_pvalue_manual(stat.test, label = "p.adj.signif", y.position = 3.5, step.increase = 0, tip.length = 0.004) +
+  geom_label(data = wilcoxTests_genotSBasal, aes(x = regCategory, y = -2.5, 
+                                             label = as.character(round(averageSBasal, digits = 4)),
+                                             colour = Selection), 
+            position = position_dodge(width = 0.6), size = 4, fontface = "bold", 
+            inherit.aes = FALSE, show.legend = FALSE) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=14, face="bold"),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold"),
+        strip.text.x = element_text(size=8, face="bold"),
+        strip.text.y = element_text(size=8, face="bold"),
+        legend.position = "top") +
+  scale_fill_manual(values = c("Fluctuating" = genotypeSBasalColor, "Stabilizing" = "darkgray")) + 
+  scale_color_manual(values = c("Fluctuating" = genotypeSBasalColor, "Stabilizing" = "darkgray")) + 
+  ylim(-4, 4) +
+  labs(x = "Regulatory gene category", y = expression(bold("Mean"~Delta~"basal expression level")))
+plot_selPressSBasalDiffPhases
+```
+
+```{r joint-phases-plot}
+plot_joint_phases <- cowplot::plot_grid(plot_varChangesDiffPhases,
+                                 plot_selPressEtaDiffPhases,
+                                 plot_selPressSBasalDiffPhases,
+                                 scale = c(0.95, 0.95, 0.95),
+                                 labels = c("E", "F", "G"),
+                                 label_size = 18,
+                                 label_fontface = "bold",
+                                 align = "v",
+                                 ncol = 1)
+ggsave(filename = paste0("plot_joint_phases_fluctSel.png"),
+       plot = plot_joint_phases, 
+       bg = "white",
+       path = plotsFolderWithPath_fluctSel, 
+       device = "png", 
+       scale = 1.2, height = 20, width = 18, units = "cm",
+       dpi = 300, limitsize = TRUE)
+```
+
+# Combine into final plot
+
+```{r joint-all-plot}
+plot_joint_phases <- cowplot::plot_grid(plot_varChangesDiffPhases,
+                                 plot_selPressEtaDiffPhases,
+                                 plot_selPressSBasalDiffPhases,
+                                 scale = c(0.95, 0.95, 0.95),
+                                 labels = c("F", "G", "H"),
+                                 label_size = 18,
+                                 label_fontface = "bold",
+                                 align = "v",
+                                 ncol = 1)
+
+plot_bars_and_empty <- cowplot::plot_grid(plot_bars_fluctSel,
+                                                NA,
+                                                        scale = c(0.95, 0.95),
+                                                        labels = c("E", ""),
+                                                        #label_size = 18,
+                                                        label_fontface = "bold",
+                                                        align = "v",
+                                                        ncol = 2)
+
+plot_joint_phases_and_adaptations <- cowplot::plot_grid(plot_bars_and_empty,
+                                                        plot_joint_phases,
+                                                        scale = c(1, 1),
+                                                        rel_heights = c(0.3, 1),
+                                                        labels = NULL,
+                                                        #label_size = 18,
+                                                        label_fontface = "bold",
+                                                        align = "v",
+                                                        ncol = 1)
+plot_final <- cowplot::plot_grid(plot_joint_timeplots,
+                                 plot_joint_phases_and_adaptations,
+                                 scale = c(1, 1),
+                                 rel_widths = c(0.5, 1),
+                                 labels = NULL,
+                                 #label_size = 18,
+                                 label_fontface = "bold",
+                                 align = "v",
+                                 ncol = 2)
+ggsave(filename = paste0("plot_joint_final_fluctSel.png"),
+       plot = plot_final, 
+       bg = "white",
+       path = plotsFolderWithPath_fluctSel, 
+       device = "png", 
+       scale = 2, height = 20, width = 16, units = "cm",
+       dpi = 300, limitsize = TRUE)
+
+```
+
+```{r}
+
+# change of var
+wilcoxTest <- wilcox.test(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "TG"],
+                          genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "TG"])
+wilcoxTest
+summary(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "TG"])
+summary(genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "TG"])
+
+wilcoxTest <- wilcox.test(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "interTF"],
+                          genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "interTF"])
+wilcoxTest
+summary(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "interTF"])
+summary(genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "interTF"])
+
+wilcoxTest <- wilcox.test(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "masterTF"],
+                          genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "masterTF"])
+wilcoxTest
+summary(genesUnderFluctSel$aveNormChangeVar_A[genesUnderFluctSel$regCategory == "masterTF"])
+summary(genesUnderStabSel$aveNormChangeVar_A[genesUnderStabSel$regCategory == "masterTF"])
+
+
+# intrinsic noise
+wilcoxTest <- wilcox.test(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "TG"],
+                          genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "TG"])
+wilcoxTest
+summary(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "TG"])
+summary(genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "TG"])
+
+wilcoxTest <- wilcox.test(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "interTF"],
+                          genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "interTF"])
+wilcoxTest
+summary(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "interTF"])
+summary(genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "interTF"])
+
+wilcoxTest <- wilcox.test(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "masterTF"],
+                          genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "masterTF"])
+wilcoxTest
+summary(genesUnderFluctSel$selpress_eta_A[genesUnderFluctSel$regCategory == "masterTF"])
+summary(genesUnderStabSel$selpress_eta_A[genesUnderStabSel$regCategory == "masterTF"])
+
+  
+  
+```
+
+
+
+# Checks
+
+
+## Relationship of mean and var
+
+```{r relationship-mean-and-variance, eval = FALSE}
+plot_meanVar_belowhalf <- ggplot() +
+  geom_point(aes(x = allNetsResults[allNetsResults$meanP_1 < 50, "meanP_1"],
+                 y = allNetsResults[allNetsResults$meanP_1 < 50, "varP_1"]),
+             alpha = 0.2, color = noiseColor, size = 0.2) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold")) +
+  geom_smooth(aes(x = allNetsResults[allNetsResults$meanP_1 < 50, "meanP_1"],
+                 y = allNetsResults[allNetsResults$meanP_1 < 50, "varP_1"]),
+              method = "lm", color = "black") +
+  labs(x = expression("Mean expression level, gen 1"), y = "Var expression level, gen 1") +
+  ylim(0, 500)
+plot_meanVar_belowhalf
+cor.test(allNetsResults[allNetsResults$meanP_1 < 50, "meanP_1"], 
+     allNetsResults[allNetsResults$meanP_1 < 50, "varP_1"])
+
+plot_meanVar_abovehalf <- ggplot() +
+  geom_point(aes(x = allNetsResults[allNetsResults$meanP_1 > 50, "meanP_1"],
+                 y = allNetsResults[allNetsResults$meanP_1 > 50, "varP_1"]),
+             alpha = 0.2, color = noiseColor, size = 0.2) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold")) +
+  geom_smooth(aes(x = allNetsResults[allNetsResults$meanP_1 > 50, "meanP_1"],
+                 y = allNetsResults[allNetsResults$meanP_1 > 50, "varP_1"]),
+              method = "lm", color = "black") +
+  labs(x = expression("Mean expression level, gen 1"), y = "Var expression level, gen 1") +
+  ylim(0, 500)
+plot_meanVar_abovehalf
+cor.test(allNetsResults[allNetsResults$meanP_1 > 50, "meanP_1"], 
+     allNetsResults[allNetsResults$meanP_1 > 50, "varP_1"])
+plot_joint <- cowplot::plot_grid(plot_meanVar_belowhalf,
+                                 plot_meanVar_abovehalf,
+                                 scale = c(0.95, 0.95),
+                                 labels = "AUTO",
+                                 label_size = 20,
+                                 label_fontface = "bold",
+                                 ncol = 2)
+ggplot2::ggsave(filename = sprintf("plot_meanVar_aboveAndBelowhalf.png"),
+       path = plotsFolderWithPath_validation,
+       plot = plot_joint, bg = "white",
+       device = "png", scale = 2, width = 12, height = 6, units = "cm",
+       dpi = 300, limitsize = TRUE)
+
+plot_meanVar_belowhalf <- ggplot() +
+  geom_point(aes(x = dirSelResultsOnlyAdaptedWithoutInf[dirSelResultsOnlyAdaptedWithoutInf$meanP_1 < 50, "meanP_1"],
+                 y = dirSelResultsOnlyAdaptedWithoutInf[dirSelResultsOnlyAdaptedWithoutInf$meanP_1 < 50, "aveNormChangeVar_PA"]),
+             alpha = 0.2, color = noiseColor, size = 0.2) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold")) +
+  geom_smooth(aes(x = dirSelResultsOnlyAdaptedWithoutInf[dirSelResultsOnlyAdaptedWithoutInf$meanP_1 < 50, "meanP_1"],
+                 y = dirSelResultsOnlyAdaptedWithoutInf[dirSelResultsOnlyAdaptedWithoutInf$meanP_1 < 50, "aveNormChangeVar_PA"]),
+              method = "lm", color = "black") +
+  labs(x = expression("Mean expression level, gen 1"), y = "aveNormChangeVar_PA") +
+  ylim(-1, 1)
+plot_meanVar_belowhalf
+cor.test(dirSelResultsOnlyAdaptedWithoutInf[dirSelResultsOnlyAdaptedWithoutInf$meanP_1 < 50, "meanP_1"], 
+     dirSelResultsOnlyAdaptedWithoutInf[dirSelResultsOnlyAdaptedWithoutInf$meanP_1 < 50, "aveNormChangeVar_PA"], na.action = "na.omit")
+
+plot_meanVar_abovehalf <- ggplot() +
+  geom_point(aes(x = dirSelResultsOnlyAdaptedWithoutInf[dirSelResultsOnlyAdaptedWithoutInf$meanP_1 > 50, "meanP_1"],
+                 y = dirSelResultsOnlyAdaptedWithoutInf[dirSelResultsOnlyAdaptedWithoutInf$meanP_1 > 50, "aveNormChangeVar_PA"]),
+             alpha = 0.2, color = noiseColor, size = 0.2) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold")) +
+  geom_smooth(aes(x = dirSelResultsOnlyAdaptedWithoutInf[dirSelResultsOnlyAdaptedWithoutInf$meanP_1 > 50, "meanP_1"],
+                 y = dirSelResultsOnlyAdaptedWithoutInf[dirSelResultsOnlyAdaptedWithoutInf$meanP_1 > 50, "aveNormChangeVar_PA"]),
+              method = "lm", color = "black") +
+  labs(x = expression("Mean expression level, gen 1"), y = "aveNormChangeVar_PA") +
+  ylim(-1, 1)
+plot_meanVar_abovehalf
+cor.test(dirSelResultsOnlyAdaptedWithoutInf[dirSelResultsOnlyAdaptedWithoutInf$meanP_1 > 50, "meanP_1"], 
+     dirSelResultsOnlyAdaptedWithoutInf[dirSelResultsOnlyAdaptedWithoutInf$meanP_1 > 50, "aveNormChangeVar_PA"])
+plot_joint <- cowplot::plot_grid(plot_meanVar_belowhalf,
+                                 plot_meanVar_abovehalf,
+                                 scale = c(0.95, 0.95),
+                                 labels = "AUTO",
+                                 label_size = 20,
+                                 label_fontface = "bold",
+                                 ncol = 2)
+ggplot2::ggsave(filename = sprintf("plot_meanAveNormChangeVar_aboveAndBelowhalf.png"),
+       path = plotsFolderWithPath_validation,
+       plot = plot_joint, bg = "white",
+       device = "png", scale = 2, width = 12, height = 6, units = "cm",
+       dpi = 300, limitsize = TRUE)
+
+
+#plot(dirSelResultsOnlyAdaptedWithoutInf$meanP_1, dirSelResultsOnlyAdaptedWithoutInf$aveNormChangeVar_A)
+#plot(dirSelResultsOnlyAdaptedWithoutInf$meanP_1, dirSelResultsOnlyAdaptedWithoutInf$aveNormChangeVar_PA, ylim = c(-0.4,0))
+#cor.test(dirSelResultsOnlyAdaptedWithoutInf$meanP_1, dirSelResultsOnlyAdaptedWithoutInf$aveNormChangeVar_PA)
+
+#plot(dirSelResultsOnlyAdaptedWithoutInf$varP_1, 
+#     dirSelResultsOnlyAdaptedWithoutInf$varP_10000 -dirSelResultsOnlyAdaptedWithoutInf$varP_1)
+#plot(stabSelResults$varP_1, 
+#     stabSelResults$varP_10000 - stabSelResults$varP_1)
+```
+## MSB optimum and eq variance
+
+```{r MSBAve-means-and-vars, eval = FALSE}
+#setwd("..")
+setwd(paste0("../results/", resultsFolder_DirSelPos))
+MSBAve <- data.frame(matrix(nrow = 0, ncol = 0))
+for(netNum in 1:500)
+{
+  setwd(paste0("net_", netNum, sep = ""))
+  MSB <- read.table("MSBAve.txt", sep = "\t", header = TRUE)
+  MSBAve <- rbind(MSBAve, MSB)
+  setwd("..")
+}
+
+plot_sOpt_MSBMean <- ggplot(MSBAve, aes(x = S_OPT, y = MSBAveMeanPheno)) +
+  geom_point(alpha = 0.2, color = noiseColor, size = 0.2) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold")) +
+  geom_smooth(method = "lm", color = "black") +
+  labs(x = expression("S_OPT"), y = "Equilibrium mean expression level")
+plot_sOpt_MSBMean
+plot_sOpt_MSBVar <- ggplot(MSBAve, aes(x = S_OPT, y = MSBAveVarP)) +
+  geom_point(alpha = 0.2, color = noiseColor, size = 0.2) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold")) +
+  geom_smooth(method = "lm", color = "black") +
+  labs(x = expression("S_OPT"), y = "Equilibrium var expression level") +
+  ylim(0, 500)
+plot_sOpt_MSBVar
+cor.test(MSBAve$S_OPT, MSBAve$MSBAveVarP, method = "spearman", exact = F)
+cor.test(MSBAve$S_OPT, MSBAve$MSBAveVarP, method = "pearson")
+cor.test(MSBAve$S_OPT, MSBAve$MSBAveVarP, method = "kendall")
+plot_sOpt_MSBMean <- ggplot(MSBAve, aes(x = S_OPT, y = MSBAveMeanGEta)) +
+  geom_point(alpha = 0.2, color = noiseColor, size = 0.2) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=14, face="bold", hjust = 0.5),
+        axis.title.x = element_text(size=14, face="bold"),
+        axis.title.y = element_text(size=16),
+        axis.text.x = element_text(size=8, face="bold"),
+        axis.text.y = element_text(size=8, face="bold")) +
+  geom_smooth(method = "lm", color = "black") +
+  labs(x = expression("S_OPT"), y = "MSBAveMeanGEta")
+plot_sOpt_MSBMean
+
+ggplot2::ggsave(filename = sprintf("plot_sOpt_MSBMean.png"),
+       path = plotsFolderWithPath_dirSelPos,
+       plot = plot_sOpt_MSBMean, bg = "white",
+       device = "png", scale = 2, width = 6, height = 6, units = "cm",
+       dpi = 300, limitsize = TRUE)
+ggplot2::ggsave(filename = sprintf("plot_sOpt_MSBVar.png"),
+       path = plotsFolderWithPath_dirSelPos,
+       plot = plot_sOpt_MSBVar, bg = "white",
+       device = "png", scale = 2, width = 6, height = 6, units = "cm",
+       dpi = 300, limitsize = TRUE)
+```

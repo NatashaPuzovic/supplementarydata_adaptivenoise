@@ -1,0 +1,81 @@
+---
+title: "Prepare dataset"
+author: "Natasha Puzovic (puzovic@evolbio.mpg.de)"
+date: "Jan 31, 2023"
+output:
+  html_document:
+    df_print: paged
+    number_sections: yes
+    toc: yes
+  pdf_document:
+    toc: yes
+---
+
+# Read data
+Read the genotype, phenotype and fitness information of evolved populations of 2000 random network topology samples.
+
+```{r read-data}
+resultsFolder = "20230213_ER_40node"
+path = paste0("../results/", resultsFolder)
+
+# read results and split into sel & neutr
+allNetsResults <- read.table(paste0(path, "/allNetsResults_fluctSel.txt"), sep = "\t", header = TRUE)
+
+# remove duplicated net metrics
+duplis <- c("k_all_exclps", "k_in_exclps", "k_out_exclps", "str_all_exclps", "str_in_exclps", 
+            "str_out_exclps", "absstr_all_exclps", "absstr_in_exclps", "absstr_out_exclps", "ave_k_all_exclps",
+            "ave_k_in_exclps", "ave_k_out_exclps", "sum_abs_inlinks", "sum_abs_outlinks", "tmax_degr_all",
+            "tmax_indegr", "tmax_outdegr", "tmax_clo_all", "tmax_betw" )
+allNetsResults <- allNetsResults[!colnames(allNetsResults) %in% duplis]
+colnames(allNetsResults)[colnames(allNetsResults) == "vector"] <- "eigen_centr"
+colnames(allNetsResults)[colnames(allNetsResults) == "absstr_in_inclps"] <- "absInStr"
+colnames(allNetsResults)[colnames(allNetsResults) == "absstr_out_inclps"] <- "absOutStr"
+
+# remove genes of degree 1 because they make in and outlink metrics colinear
+# reason: when we generate networks we impose that the network must have a single component
+# i.e. all genes are connected. Many genes end up having just one connection, which can be either
+# an in or outlink. 
+#allNetsResults <- allNetsResults[allNetsResults$absInStr != 0, ] #### changed
+#allNetsResults <- allNetsResults[allNetsResults$absOutStr != 0, ] #### changed
+```
+
+```{r remove-fixed-components}
+# find fixed components
+fixCompIndices <- which(allNetsResults$meanP_1 == 0)
+fixCompIndices <- c(fixCompIndices, which(allNetsResults$meanP_10000 == 0))
+fixCompIndices <- c(fixCompIndices, which(allNetsResults$meanP_1 == 100))
+fixCompIndices <- c(fixCompIndices, which(allNetsResults$meanP_10000 == 100))
+
+# remove fixed components
+allNetsResults <- allNetsResults[-fixCompIndices, ]
+```
+
+```{r transform}
+allNetsResults$absInStrT_sqrt <- sqrt(allNetsResults$absInStr)
+allNetsResults$absOutStrT_sqrt <- sqrt(allNetsResults$absOutStr)
+allNetsResults$absInStrT_log1p <- log1p(allNetsResults$absInStr)
+allNetsResults$absOutStrT_log1p <- log1p(allNetsResults$absOutStr)
+allNetsResults$absInStrT_log10 <- log10(allNetsResults$absInStr)
+allNetsResults$absOutStrT_log10 <- log10(allNetsResults$absOutStr)
+```
+
+
+```{r preview transformed distributions}
+par(mfrow = c(4, 2))
+hist(allNetsResults$absInStr, breaks = 50)
+hist(allNetsResults$absOutStr, breaks = 50)
+hist(allNetsResults$absInStrT_sqrt, breaks = 50)
+hist(allNetsResults$absOutStrT_sqrt, breaks = 50)
+hist(allNetsResults$absInStrT_log1p, breaks = 50)
+hist(allNetsResults$absOutStrT_log1p, breaks = 50)
+hist(allNetsResults$absInStrT_log10, breaks = 50)
+hist(allNetsResults$absOutStrT_log10, breaks = 50)
+```
+
+
+```{r write out}
+# write summary of all network results (whole sim batch)
+write.table(allNetsResults,
+            file = paste0(path, "/allNetsResults_prepped_fluctSel.txt"),
+            sep = "\t", row.names = FALSE)
+```

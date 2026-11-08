@@ -1,0 +1,174 @@
+---
+title: "Evolution of "
+author: "Natasha Puzovic (puzovic@evolbio.mpg.de)"
+date: "Oct 08, 2021"
+output:
+  pdf_document:
+    toc: yes
+  html_document:
+    df_print: paged
+    number_sections: yes
+    toc: yes
+---
+
+# Read data
+
+```{r specify-path}
+#resultsFolder = "../../../cpp/netlings2.0/"
+path = paste0("../../../results/preliminary_20220926/")
+
+# read results
+#allNetsResults <- read.table(paste0(path, "/allNetsResults_prepped.txt"), sep = "\t", header = TRUE)
+
+# read params
+params <- read.table(file = paste0(path, "paramsScalarSel"), 
+                     sep = " ", header = FALSE, col.names = c("param", "val"))
+num_nodes = params$val[params$param == "NUM_NODES"]
+num_generations = params$val[params$param == "NUM_GENERATIONS"]
+
+# names
+node_names = paste("G", 1:num_nodes, sep = "")
+genotypesColnames <- paste("G_", node_names, sep = "")
+phenotypesColnames <- paste("P_", node_names, sep = "")
+sBasalColnames <- paste("S_", node_names, sep = "")
+```
+
+## Load packages & misc
+
+```{r load-packages}
+# Package list
+packages <- c("dplyr",
+              "nlme", 
+              "MuMIn", # for r.squared in lme models
+              "ggplot2",
+              "ggpubr", # for the pubclean theme
+              "ggridges", 
+              "gridExtra",
+              "cowplot", # for arranging plots
+              "infotheo",
+              "lme4", 
+              "car", # for vif measure
+              "RColorBrewer", # for color palettes
+              "latex2exp", # for latex notation in the plots
+              "reshape2", 
+              "formattable", # for nice tables
+              "htmltools", # for outputting the table
+              "webshot") # for outputting the table
+
+# Install packages not yet installed
+installed_packages <- packages %in% rownames(installed.packages())
+if (any(installed_packages == FALSE)) {
+  install.packages(packages[!installed_packages])
+}
+
+# Packages loading
+invisible(lapply(packages, library, character.only = TRUE))
+
+# colors for plots
+noiseColor = "#01665e"
+genotypeNoiseColor = "#7b3294"
+genotypeSBasalColor = "#08519c"
+phenotypeColor = "#d95f0e"
+fitnessColor = "#e78ac3"
+neutralityColor = "darkgray"
+customGreenAIC = "#41ab5d"
+```
+
+
+
+# Directional selection on one gene
+
+```{r add-optimal-expression-level-stab}
+sEq = 50.4727
+sOpt = sEq + 30
+```
+
+## Twenty genes
+
+```{r read-data}
+# read hist file
+histFile <- read.table(file = paste0(path, "fossilsTwentyGenesDirLong.hist"), sep = " ", header = FALSE)
+colnames(histFile) <- c("generation", "cell", "IDGenotype", "IDNet", "IDNoise", "IDSBasal", phenotypesColnames, "fitness")
+histFile$scen <- "selection"
+
+# read noises file
+noisesIDFile <- read.table(file = paste0(path, "fossilsTwentyGenesDirLong.noises"), sep = " ", header = FALSE)
+noisesIDFile <- noisesIDFile[, -dim(noisesIDFile)[2]]
+colnames(noisesIDFile) <- c("IDNoise", genotypesColnames)
+
+# read sbasals file
+sBasalsIDFile <- read.table(file = paste0(path, "fossilsTwentyGenesDirLong.sbasals"), sep = " ", header = FALSE)
+sBasalsIDFile <- sBasalsIDFile[, -dim(sBasalsIDFile)[2]]
+colnames(sBasalsIDFile) <- c("IDSBasal", sBasalColnames)
+
+# merge
+noisesHist <- inner_join(histFile[, c("generation", "cell", "IDNoise")], noisesIDFile, by = "IDNoise")
+sBasalsHist <- inner_join(histFile[, c("generation", "cell", "IDSBasal")], sBasalsIDFile, by = "IDSBasal")
+```
+
+```{r plot}
+plot_noiseGenotypeDynamics_TwentyGenesDir <- ggplot(noisesHist, aes(x = generation, y = G_G1)) + 
+  geom_point(size = 0.5, alpha = 0.01, color = genotypeNoiseColor) +
+  stat_summary(aes(group = 1), fun.y = median, geom = "line", size = 1, color = genotypeNoiseColor) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=12, face="bold", hjust = 0.5),
+        plot.subtitle = element_text(size=12),
+        axis.title.x = element_text(size=16, face="bold"),
+        axis.title.y = element_text(size=16, face="bold"),
+        axis.text.x = element_text(size=10, face="bold"),
+        axis.text.y = element_text(size=10, face="bold")) +
+  labs(subtitle = paste0("Directional selection, 20 genes selected"),
+       x = "Generations", y = "Intrinsic noise parameter") + 
+  ylim(0, max(noisesHist$G_G1))
+plot_noiseGenotypeDynamics_TwentyGenesDir
+
+plot_sBasalsGenotypeDynamics_TwentyGenesDir <- ggplot(sBasalsHist, aes(x = generation, y = S_G1)) + 
+  geom_point(size = 0.5, alpha = 0.01, color = genotypeSBasalColor) +
+  stat_summary(aes(group = 1), fun.y = median, geom = "line", size = 1, color = genotypeSBasalColor) +
+  geom_hline(yintercept = sOpt) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=12, face="bold", hjust = 0.5),
+        plot.subtitle = element_text(size=12),
+        axis.title.x = element_text(size=16, face="bold"),
+        axis.title.y = element_text(size=16, face="bold"),
+        axis.text.x = element_text(size=10, face="bold"),
+        axis.text.y = element_text(size=10, face="bold")) +
+  labs(subtitle = paste0(""), x = "Generations", y = "Basal expression level") + 
+  ylim(0, 100)
+plot_sBasalsGenotypeDynamics_TwentyGenesDir
+
+plot_phenotypeDynamics_TwentyGenesDir <- ggplot(histFile, aes(x = generation, y = P_G1)) + 
+  geom_point(size = 0.5, alpha = 0.01, color = phenotypeColor) +
+  stat_summary(aes(group = 1), fun.y = median, geom = "line", size = 1, color = phenotypeColor) +
+  geom_hline(yintercept = sOpt) +
+  theme_pubclean() + 
+  theme(plot.title = element_text(size=12, face="bold", hjust = 0.5),
+        plot.subtitle = element_text(size=12),
+        axis.title.x = element_text(size=16, face="bold"),
+        axis.title.y = element_text(size=16, face="bold"),
+        axis.text.x = element_text(size=10, face="bold"),
+        axis.text.y = element_text(size=10, face="bold")) +
+  labs(subtitle = paste0(""), x = "Generations", y = "Expression level") + 
+  ylim(0, 100)
+plot_phenotypeDynamics_TwentyGenesDir
+```
+
+# Final plot
+
+```{r final-plot}
+plot_joint <- cowplot::plot_grid(plot_noiseGenotypeDynamics_TwentyGenesDir,
+                                 plot_sBasalsGenotypeDynamics_TwentyGenesDir,
+                                 plot_phenotypeDynamics_TwentyGenesDir,
+                                 scale = c(0.95, 0.95, 0.95),
+                                 labels = "AUTO",
+                                 label_size = 20,
+                                 label_fontface = "bold",
+                                 ncol = 1)
+ggsave(filename = sprintf("plot_directional_longRun.png"),
+       plot = plot_joint, 
+       bg = "white",
+       path = path, 
+       device = "png", 
+       scale = 2, height = 15, width = 6, units = "cm",
+       dpi = 300, limitsize = TRUE)
+```
